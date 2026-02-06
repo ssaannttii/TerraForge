@@ -282,7 +282,7 @@ export function buildServer() {
     return reply.send(summary);
   });
 
-  app.get('/world/:worldId/events/search', async (request, reply) => {
+  const handleSearch = (request: { params: unknown; query: unknown }, reply: { code: (status: number) => any; send: (payload: unknown) => any }) => {
     const { worldId } = request.params as { worldId: string };
     const { q, limit } = request.query as { q?: string; limit?: string };
     const world = worlds.get(worldId);
@@ -295,6 +295,14 @@ export function buildServer() {
     if (!q) return reply.send([]);
     const results = searchWorldIndexes(indexes, q, limitParsed ?? 20);
     return reply.send(results);
+  };
+
+  app.get('/world/:worldId/search', async (request, reply) => {
+    return handleSearch(request, reply);
+  });
+
+  app.get('/world/:worldId/events/search', async (request, reply) => {
+    return handleSearch(request, reply);
   });
 
   app.get('/world/:worldId/polity/:id/history', async (request, reply) => {
