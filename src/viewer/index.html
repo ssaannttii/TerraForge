@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TerraForge Viewer</title>
+    <link rel="stylesheet" href="/viewer/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>TerraForge Viewer</h1>
+        <p class="subtitle">Explore deterministic worlds: maps, polities, and timelines.</p>
+      </div>
+      <div class="header-actions">
+        <button id="refresh-worlds" type="button">Refresh worlds</button>
+      </div>
+    </header>
+
+    <main class="app-layout">
+      <section class="panel controls-panel">
+        <h2>Worlds</h2>
+        <label>
+          Loaded Worlds
+          <select id="world-select"></select>
+        </label>
+        <div id="world-meta" class="meta"></div>
+
+        <details class="generate-panel" open>
+          <summary>Generate new world</summary>
+          <p class="hint">POSTs to <code>/generate</code> using the JSON below.</p>
+          <textarea id="generate-config" rows="14"></textarea>
+          <button id="generate-world" type="button">Generate</button>
+        </details>
+
+        <h2>Timeline</h2>
+        <div class="timeline-controls">
+          <div class="timeline-buttons">
+            <button data-step="-10">-10</button>
+            <button data-step="-1">-1</button>
+            <button data-step="1">+1</button>
+            <button data-step="10">+10</button>
+          </div>
+          <input id="year-slider" type="range" min="0" max="0" step="1" />
+          <div class="year-display">Year: <span id="year-value">-</span></div>
+        </div>
+
+        <h2>Map</h2>
+        <label>
+          Layer
+          <select id="layer-select">
+            <option value="political">Political</option>
+            <option value="biome">Biome</option>
+            <option value="elevation">Elevation</option>
+            <option value="resources">Resources</option>
+          </select>
+        </label>
+        <div class="canvas-wrapper">
+          <canvas id="map-canvas"></canvas>
+          <div id="map-tooltip" class="tooltip" hidden></div>
+        </div>
+        <div class="map-notes" id="map-notes"></div>
+      </section>
+
+      <section class="panel inspectors-panel">
+        <div class="inspector-block">
+          <h2>Polity Inspector</h2>
+          <div class="inspector-controls">
+            <label>
+              Compare mode
+              <input id="compare-toggle" type="checkbox" />
+            </label>
+            <label>
+              Secondary polity
+              <select id="compare-select" disabled></select>
+            </label>
+          </div>
+          <div class="polity-detail">
+            <div>
+              <h3>Primary</h3>
+              <div id="polity-primary"></div>
+            </div>
+            <div>
+              <h3>Secondary</h3>
+              <div id="polity-secondary"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspector-block">
+          <h2>Events</h2>
+          <div class="filters">
+            <label>
+              Type
+              <select id="event-type"></select>
+            </label>
+            <label>
+              Polity
+              <select id="event-polity"></select>
+            </label>
+            <label>
+              Search
+              <input id="event-search" type="search" placeholder="search..." />
+            </label>
+          </div>
+          <div id="events-list" class="list"></div>
+        </div>
+
+        <div class="inspector-block">
+          <h2>Wars</h2>
+          <div id="wars-list" class="list"></div>
+          <div id="war-detail" class="detail"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/viewer/app.js"></script>
+  </body>
+</html>
