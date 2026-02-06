@@ -1,14 +1,65 @@
 import Fastify from 'fastify';
+import { ZodError } from 'zod';
 import { ConfigSchema } from '../core/schema.js';
 import { generateWorld } from '../core/engine.js';
 import { WorldBundle } from '../core/types.js';
 import { hashObject } from '../core/hashing.js';
 import { exportGeoJson } from '../export/geojson.js';
 
+type Snapshot = WorldBundle['timelineIndex']['snapshots'][number];
+
+const parseOptionalInt = (value: unknown): number | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    if (value.trim() === '') {
+      return undefined;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+      return undefined;
+    }
+    return parsed;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      return undefined;
+    }
+    return value;
+  }
+  return undefined;
+};
+
+const selectSnapshot = (snapshots: Snapshot[], year: number): Snapshot | undefined => {
+  if (snapshots.length === 0) {
+    return undefined;
+  }
+  let earliest = snapshots[0];
+  let latest: Snapshot | undefined;
+  for (const snapshot of snapshots) {
+    if (snapshot.year < earliest.year) {
+      earliest = snapshot;
+    }
+    if (snapshot.year <= year && (!latest || snapshot.year > latest.year)) {
+      latest = snapshot;
+    }
+  }
+  return latest ?? earliest;
+};
+
 export function buildServer() {
   const app = Fastify();
   const worlds = new Map<string, WorldBundle>();
   (app as any).worlds = worlds;
+
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({ error: 'invalid config', details: error.issues });
+    }
+    app.log.error(error);
+    return reply.code(500).send({ error: 'internal error' });
+  });
 
   app.get('/health', async () => ({ status: 'ok' }));
 
@@ -32,16 +83,21 @@ export function buildServer() {
     const { layer, year } = request.query as { layer: string; year?: string };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
+    const yearParsed = parseOptionalInt(year);
+    if (year !== undefined && yearParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid year' });
+    }
     if (layer === 'biome') {
       return reply.send(world.cells.map((cell) => cell.biomeId));
     }
     if (layer === 'resources') {
       return reply.send(world.cells.map((cell) => cell.resourceTags));
     }
-    const yearNum = year ? Number(year) : world.meta.startYear;
-    const snapshot = world.timelineIndex.snapshots
-      .filter((s) => s.year <= yearNum)
-      .sort((a, b) => b.year - a.year)[0];
+    const yearNum = yearParsed ?? world.meta.startYear;
+    const snapshot = selectSnapshot(world.timelineIndex.snapshots, yearNum);
+    if (!snapshot) {
+      return reply.code(500).send({ error: 'timeline snapshots missing' });
+    }
     return reply.send(snapshot.politicalOwnersRLE);
   });
 
@@ -50,16 +106,25 @@ export function buildServer() {
     const { year, sort, limit } = request.query as { year?: string; sort?: string; limit?: string };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
-    const yearNum = year ? Number(year) : world.meta.startYear;
-    const snapshot = world.timelineIndex.snapshots
-      .filter((s) => s.year <= yearNum)
-      .sort((a, b) => b.year - a.year)[0];
+    const yearParsed = parseOptionalInt(year);
+    if (year !== undefined && yearParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid year' });
+    }
+    const limitParsed = parseOptionalInt(limit);
+    if (limit !== undefined && limitParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid limit' });
+    }
+    const yearNum = yearParsed ?? world.meta.startYear;
+    const snapshot = selectSnapshot(world.timelineIndex.snapshots, yearNum);
+    if (!snapshot) {
+      return reply.code(500).send({ error: 'timeline snapshots missing' });
+    }
     let polities = snapshot.polityStates;
     if (sort === 'powerScore') {
       polities = [...polities].sort((a, b) => b.stats.powerScore - a.stats.powerScore);
     }
-    if (limit) {
-      polities = polities.slice(0, Number(limit));
+    if (limitParsed !== undefined) {
+      polities = polities.slice(0, limitParsed);
     }
     return reply.send(polities);
   });
@@ -69,10 +134,15 @@ export function buildServer() {
     const { year } = request.query as { year?: string };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
-    const yearNum = year ? Number(year) : world.meta.startYear;
-    const snapshot = world.timelineIndex.snapshots
-      .filter((s) => s.year <= yearNum)
-      .sort((a, b) => b.year - a.year)[0];
+    const yearParsed = parseOptionalInt(year);
+    if (year !== undefined && yearParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid year' });
+    }
+    const yearNum = yearParsed ?? world.meta.startYear;
+    const snapshot = selectSnapshot(world.timelineIndex.snapshots, yearNum);
+    if (!snapshot) {
+      return reply.code(500).send({ error: 'timeline snapshots missing' });
+    }
     const polity = snapshot.polityStates.find((p) => p.id === id);
     if (!polity) return reply.code(404).send({ error: 'polity not found' });
     return reply.send(polity);
@@ -83,8 +153,16 @@ export function buildServer() {
     const { from, to, type } = request.query as { from?: string; to?: string; type?: string };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
-    const fromYear = from ? Number(from) : world.meta.startYear;
-    const toYear = to ? Number(to) : world.meta.endYear;
+    const fromParsed = parseOptionalInt(from);
+    if (from !== undefined && fromParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid from' });
+    }
+    const toParsed = parseOptionalInt(to);
+    if (to !== undefined && toParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid to' });
+    }
+    const fromYear = fromParsed ?? world.meta.startYear;
+    const toYear = toParsed ?? world.meta.endYear;
     const events = world.events.filter((event) => event.year >= fromYear && event.year <= toYear);
     const filtered = type ? events.filter((event) => event.type === type) : events;
     return reply.send(filtered);
@@ -104,7 +182,11 @@ export function buildServer() {
     const { year } = request.query as { year?: string };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
-    const yearNum = year ? Number(year) : world.meta.startYear;
+    const yearParsed = parseOptionalInt(year);
+    if (year !== undefined && yearParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid year' });
+    }
+    const yearNum = yearParsed ?? world.meta.startYear;
     const changes = world.territorialChanges.filter((change) => change.year === yearNum);
     return reply.send(changes);
   });
@@ -116,7 +198,11 @@ export function buildServer() {
     if (!world) return reply.code(404).send({ error: 'world not found' });
     if (format === 'geojson') {
       const outPath = `out_${worldId}.geojson`;
-      await exportGeoJson(world, outPath, year ? Number(year) : undefined);
+      const yearParsed = parseOptionalInt(year);
+      if (year !== undefined && yearParsed === undefined) {
+        return reply.code(400).send({ error: 'invalid year' });
+      }
+      await exportGeoJson(world, outPath, yearParsed);
       return reply.send({ path: outPath });
     }
     return reply.send(world);
@@ -128,5 +214,12 @@ export function buildServer() {
 if (process.argv[1]?.includes('server')) {
   const app = buildServer();
   const port = Number(process.env.PORT ?? 3000);
-  app.listen({ port, host: '0.0.0.0' });
+  (async () => {
+    try {
+      await app.listen({ port, host: '0.0.0.0' });
+    } catch (error) {
+      app.log.error(error);
+      process.exit(1);
+    }
+  })();
 }
