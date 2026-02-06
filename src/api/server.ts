@@ -1,4 +1,6 @@
 import Fastify from 'fastify';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { ZodError } from 'zod';
 import { ConfigSchema } from '../core/schema.js';
 import { generateWorld } from '../core/engine.js';
@@ -52,6 +54,17 @@ export function buildServer() {
   const app = Fastify();
   const worlds = new Map<string, WorldBundle>();
   (app as any).worlds = worlds;
+  const viewerCache = new Map<string, string>();
+
+  const loadViewerAsset = async (filename: string) => {
+    if (viewerCache.has(filename)) {
+      return viewerCache.get(filename) as string;
+    }
+    const assetPath = path.join(process.cwd(), 'src', 'viewer', filename);
+    const content = await readFile(assetPath, 'utf-8');
+    viewerCache.set(filename, content);
+    return content;
+  };
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
@@ -62,6 +75,25 @@ export function buildServer() {
   });
 
   app.get('/health', async () => ({ status: 'ok' }));
+
+  app.get('/worlds', async () => {
+    return Array.from(worlds.entries()).map(([worldId, world]) => ({ worldId, meta: world.meta }));
+  });
+
+  app.get('/viewer', async (_request, reply) => {
+    const html = await loadViewerAsset('index.html');
+    return reply.type('text/html').send(html);
+  });
+
+  app.get('/viewer/app.js', async (_request, reply) => {
+    const js = await loadViewerAsset('app.js');
+    return reply.type('text/javascript').send(js);
+  });
+
+  app.get('/viewer/style.css', async (_request, reply) => {
+    const css = await loadViewerAsset('style.css');
+    return reply.type('text/css').send(css);
+  });
 
   app.post('/generate', async (request, reply) => {
     const config = ConfigSchema.parse(request.body);
@@ -89,6 +121,9 @@ export function buildServer() {
     }
     if (layer === 'biome') {
       return reply.send(world.cells.map((cell) => cell.biomeId));
+    }
+    if (layer === 'elevation') {
+      return reply.send(world.cells.map((cell) => cell.elevation));
     }
     if (layer === 'resources') {
       return reply.send(world.cells.map((cell) => cell.resourceTags));

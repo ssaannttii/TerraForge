@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { spawn } from 'node:child_process';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { ConfigSchema } from '../core/schema.js';
 import { generateWorld } from '../core/engine.js';
@@ -41,6 +42,54 @@ program
     (app as any).worlds?.set?.(worldId, bundle);
     const port = Number(process.env.PORT ?? 3000);
     await app.listen({ port, host: '0.0.0.0' });
+  });
+
+const openBrowser = (url: string) => {
+  const platform = process.platform;
+  let command = '';
+  let args: string[] = [];
+  if (platform === 'win32') {
+    command = 'cmd';
+    args = ['/c', 'start', '', url];
+  } else if (platform === 'darwin') {
+    command = 'open';
+    args = [url];
+  } else {
+    command = 'xdg-open';
+    args = [url];
+  }
+  const child = spawn(command, args, { stdio: 'ignore', detached: true });
+  child.on('error', () => {
+    console.log(`Open this URL in your browser: ${url}`);
+  });
+  child.unref();
+};
+
+program
+  .command('view')
+  .option('--config <path>', 'config path', 'examples/small.json')
+  .option('--port <port>', 'port for the viewer', '3000')
+  .option('--host <host>', 'host for the viewer', '127.0.0.1')
+  .action(async (opts) => {
+    const raw = await readFile(opts.config, 'utf-8');
+    const config = ConfigSchema.parse(JSON.parse(raw));
+    const { buildServer } = await import('../api/server.js');
+    const app = buildServer();
+    const bundle = generateWorld(config);
+    const worldId = bundle.meta.configHash;
+    (app as any).worlds?.set?.(worldId, bundle);
+    const port = Number(opts.port);
+    const host = opts.host;
+    const url = `http://${host}:${port}/viewer`;
+    try {
+      await app.listen({ port, host });
+    } catch (error) {
+      if (!(error instanceof Error) || !String((error as { code?: string }).code).includes('EADDRINUSE')) {
+        throw error;
+      }
+    }
+    console.log(`Viewer available at ${url}`);
+    openBrowser(url);
   });
 
 program
