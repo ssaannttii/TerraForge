@@ -6,7 +6,7 @@ import { hashObject } from '../src/core/hashing.js';
 const config = ConfigSchema.parse({
   seed: 123,
   planet: { mapWidth: 80, mapHeight: 40, numContinents: 4, oceanCoverage: 0.68, radiusKm: 6371, tectonicsMode: 'lite', climateModel: 'koppen-lite' },
-  societies: { numCultureGroups: 20, numCitiesTarget: 40, numPolitiesTarget: 40, startingYear: 0, endingYear: 200, techPace: 'medium', migrationIntensity: 0.3 },
+  societies: { numCultureGroups: 20, numCitiesTarget: 40, numPolitiesTarget: 50, startingYear: 0, endingYear: 200, techPace: 'medium', migrationIntensity: 0.3 },
   geopolitics: {
     aggression: 0.4,
     diplomacyBias: 0.6,

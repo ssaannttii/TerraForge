@@ -13,9 +13,9 @@ const config = {
     climateModel: 'koppen-lite'
   },
   societies: {
-    numCultureGroups: 10,
+    numCultureGroups: 20,
     numCitiesTarget: 20,
-    numPolitiesTarget: 20,
+    numPolitiesTarget: 50,
     startingYear: 0,
     endingYear: 100,
     techPace: 'medium',

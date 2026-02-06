@@ -6,7 +6,7 @@ import { expandRanges } from '../src/core/utils/compress.js';
 const config = ConfigSchema.parse({
   seed: 42,
   planet: { mapWidth: 60, mapHeight: 30, numContinents: 4, oceanCoverage: 0.66, radiusKm: 6371, tectonicsMode: 'lite', climateModel: 'koppen-lite' },
-  societies: { numCultureGroups: 20, numCitiesTarget: 30, numPolitiesTarget: 30, startingYear: 0, endingYear: 100, techPace: 'medium', migrationIntensity: 0.3 },
+  societies: { numCultureGroups: 20, numCitiesTarget: 30, numPolitiesTarget: 50, startingYear: 0, endingYear: 100, techPace: 'medium', migrationIntensity: 0.3 },
   geopolitics: {
     aggression: 0.4,
     diplomacyBias: 0.6,
