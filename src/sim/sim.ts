@@ -128,7 +128,10 @@ export function simulateTimeline(
         const winner = war.outcome === 'A_WIN' ? war.sides.A[0] : war.sides.B[0];
         const loser = war.outcome === 'A_WIN' ? war.sides.B[0] : war.sides.A[0];
         const changeId = `change-${changeCounter++}`;
-        const transferCell = prng.nextInt(0, ownerByCell.length - 1);
+        const transferCell = pickTransferCell(prng, ownerByCell, loser);
+        if (transferCell === null) {
+          continue;
+        }
         const change: TerritorialChange = {
           id: changeId,
           year,
@@ -199,6 +202,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function pickTransferCell(prng: PRNG, ownerByCell: string[], loserId: string): number | null {
+  const candidates: number[] = [];
+  for (let i = 0; i < ownerByCell.length; i += 1) {
+    if (ownerByCell[i] === loserId) {
+      candidates.push(i);
+    }
+  }
+  if (candidates.length === 0) {
+    return null;
+  }
+  return candidates[prng.nextInt(0, candidates.length - 1)];
+}
+
 function updatePolityTerritory(polities: PolityState[], winnerId: string, loserId: string, cellId: number): void {
   const winner = polities.find((p) => p.id === winnerId);
   const loser = polities.find((p) => p.id === loserId);
@@ -208,7 +224,9 @@ function updatePolityTerritory(polities: PolityState[], winnerId: string, loserI
       for (let i = range.start; i <= range.end; i += 1) list.push(i);
       return list;
     });
-    ids.push(cellId);
+    if (!ids.includes(cellId)) {
+      ids.push(cellId);
+    }
     winner.territory.cellIdsCompressed = compressRanges(ids);
   }
   if (loser) {
