@@ -42,6 +42,8 @@ node dist/cli/index.js export --world out/world.json --format geojson --year 500
 - `GET /world/:worldId/war/:id`
 - `GET /world/:worldId/changes?year=YYYY`
 - `GET /world/:worldId/export?format=...`
+- Invalid numeric query params (year/from/to/limit) return `400 { error: "invalid <param>" }`.
+- Invalid `/generate` config returns `400 { error: "invalid config", details: [...] }`.
 
 ## Output Formats
 - **JSON**: `WorldBundle` (deterministically ordered fields).
