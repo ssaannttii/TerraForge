@@ -3,38 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TerraForge Viewer</title>
+    <title>TerraForge History Viewer</title>
     <link rel="stylesheet" href="/viewer/style.css" />
   </head>
   <body>
-    <header class="app-header">
-      <div>
-        <h1>TerraForge Viewer</h1>
-        <p class="subtitle">Explore deterministic worlds: maps, polities, and timelines.</p>
+    <header class="top-bar">
+      <div class="brand">
+        <div class="logo">TerraForge</div>
+        <div class="tagline">History-first world viewer</div>
       </div>
-      <div class="header-actions">
+      <div class="search-wrap">
+        <input id="global-search" type="search" placeholder="Search polities, wars, events..." />
+        <div id="search-results" class="search-results" hidden></div>
+        <div class="search-hint">Shortcuts: <kbd>/</kbd> focus, <kbd>Enter</kbd> open, <kbd>Esc</kbd> close</div>
+      </div>
+      <div class="top-actions">
         <button id="refresh-worlds" type="button">Refresh worlds</button>
+        <select id="world-select"></select>
       </div>
     </header>
 
     <main class="app-layout">
-      <section class="panel controls-panel">
-        <h2>Worlds</h2>
-        <label>
-          Loaded Worlds
-          <select id="world-select"></select>
-        </label>
+      <section class="panel timeline-panel">
+        <h2>Timeline Navigator</h2>
         <div id="world-meta" class="meta"></div>
 
-        <details class="generate-panel" open>
-          <summary>Generate new world</summary>
-          <p class="hint">POSTs to <code>/generate</code> using the JSON below.</p>
-          <textarea id="generate-config" rows="14"></textarea>
-          <button id="generate-world" type="button">Generate</button>
-        </details>
+        <div id="empty-world" class="empty-world" hidden>
+          <h3>No world loaded yet</h3>
+          <p>Generate a world to start exploring its history.</p>
+          <textarea id="generate-config" rows="10"></textarea>
+          <button id="generate-world" type="button">Generate world</button>
+        </div>
 
-        <h2>Timeline</h2>
         <div class="timeline-controls">
+          <label>
+            Jump to year
+            <input id="year-input" type="number" />
+          </label>
           <div class="timeline-buttons">
             <button data-step="-10">-10</button>
             <button data-step="-1">-1</button>
@@ -45,72 +50,80 @@
           <div class="year-display">Year: <span id="year-value">-</span></div>
         </div>
 
-        <h2>Map</h2>
-        <label>
-          Layer
-          <select id="layer-select">
-            <option value="political">Political</option>
-            <option value="biome">Biome</option>
-            <option value="elevation">Elevation</option>
-            <option value="resources">Resources</option>
-          </select>
-        </label>
+        <div class="timeline-summary">
+          <h3>Timeline heatmap</h3>
+          <div id="timeline-heatmap" class="heatmap"></div>
+        </div>
+
+        <div class="events-year">
+          <h3>Events in this year</h3>
+          <div id="events-groups"></div>
+        </div>
+
+        <div class="ledger">
+          <h3>Absorption ledger</h3>
+          <div class="ledger-filters">
+            <label>Polity
+              <select id="ledger-polity"></select>
+            </label>
+            <label>Type
+              <select id="ledger-type"></select>
+            </label>
+            <label>From
+              <input id="ledger-from" type="number" />
+            </label>
+            <label>To
+              <input id="ledger-to" type="number" />
+            </label>
+            <button id="ledger-refresh" type="button">Apply</button>
+          </div>
+          <div class="ledger-table" id="ledger-table"></div>
+        </div>
+
+        <div class="top-powers">
+          <h3>Top powers over time</h3>
+          <label>Decade
+            <select id="top-powers-decade"></select>
+          </label>
+          <div id="top-powers-list" class="list"></div>
+        </div>
+      </section>
+
+      <section class="panel inspector-panel">
+        <h2>Inspector</h2>
+        <div id="story-card" class="story-card">Select an event to see its story.</div>
+        <div class="tabs">
+          <button class="tab-button active" data-tab="polity">Polity</button>
+          <button class="tab-button" data-tab="war">War</button>
+          <button class="tab-button" data-tab="change">Change</button>
+        </div>
+        <div class="tab-content active" id="tab-polity"></div>
+        <div class="tab-content" id="tab-war"></div>
+        <div class="tab-content" id="tab-change"></div>
+      </section>
+
+      <section class="panel map-panel">
+        <div class="map-header">
+          <h2>Map</h2>
+          <div class="map-controls">
+            <label>
+              Layer
+              <select id="layer-select">
+                <option value="political">Political</option>
+                <option value="biome">Biome</option>
+                <option value="elevation">Elevation</option>
+                <option value="resources">Resources</option>
+              </select>
+            </label>
+            <button id="focus-polity" type="button">Focus on selected polity</button>
+            <button id="show-change" type="button">Show change footprint</button>
+          </div>
+        </div>
         <div class="canvas-wrapper">
           <canvas id="map-canvas"></canvas>
           <div id="map-tooltip" class="tooltip" hidden></div>
         </div>
         <div class="map-notes" id="map-notes"></div>
-      </section>
-
-      <section class="panel inspectors-panel">
-        <div class="inspector-block">
-          <h2>Polity Inspector</h2>
-          <div class="inspector-controls">
-            <label>
-              Compare mode
-              <input id="compare-toggle" type="checkbox" />
-            </label>
-            <label>
-              Secondary polity
-              <select id="compare-select" disabled></select>
-            </label>
-          </div>
-          <div class="polity-detail">
-            <div>
-              <h3>Primary</h3>
-              <div id="polity-primary"></div>
-            </div>
-            <div>
-              <h3>Secondary</h3>
-              <div id="polity-secondary"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="inspector-block">
-          <h2>Events</h2>
-          <div class="filters">
-            <label>
-              Type
-              <select id="event-type"></select>
-            </label>
-            <label>
-              Polity
-              <select id="event-polity"></select>
-            </label>
-            <label>
-              Search
-              <input id="event-search" type="search" placeholder="search..." />
-            </label>
-          </div>
-          <div id="events-list" class="list"></div>
-        </div>
-
-        <div class="inspector-block">
-          <h2>Wars</h2>
-          <div id="wars-list" class="list"></div>
-          <div id="war-detail" class="detail"></div>
-        </div>
       </section>
     </main>
 

@@ -4,9 +4,10 @@ import path from 'node:path';
 import { ZodError } from 'zod';
 import { ConfigSchema } from '../core/schema.js';
 import { generateWorld } from '../core/engine.js';
-import { WorldBundle } from '../core/types.js';
+import { TimelineEvent, WorldBundle } from '../core/types.js';
 import { hashObject } from '../core/hashing.js';
 import { exportGeoJson } from '../export/geojson.js';
+import { buildWorldIndexes, searchWorldIndexes, WorldIndexes } from '../sim/indexes.js';
 
 type Snapshot = WorldBundle['timelineIndex']['snapshots'][number];
 
@@ -53,7 +54,9 @@ const selectSnapshot = (snapshots: Snapshot[], year: number): Snapshot | undefin
 export function buildServer() {
   const app = Fastify();
   const worlds = new Map<string, WorldBundle>();
+  const worldIndexes = new Map<string, WorldIndexes>();
   (app as any).worlds = worlds;
+  (app as any).worldIndexes = worldIndexes;
   const viewerCache = new Map<string, string>();
 
   const loadViewerAsset = async (filename: string) => {
@@ -100,6 +103,7 @@ export function buildServer() {
     const bundle = generateWorld(config);
     const worldId = hashObject({ seed: config.seed, config });
     worlds.set(worldId, bundle);
+    worldIndexes.set(worldId, buildWorldIndexes(bundle));
     return reply.send({ worldId, bundle });
   });
 
@@ -214,16 +218,113 @@ export function buildServer() {
 
   app.get('/world/:worldId/changes', async (request, reply) => {
     const { worldId } = request.params as { worldId: string };
-    const { year } = request.query as { year?: string };
+    const { year, from, to, type } = request.query as { year?: string; from?: string; to?: string; type?: string };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
     const yearParsed = parseOptionalInt(year);
     if (year !== undefined && yearParsed === undefined) {
       return reply.code(400).send({ error: 'invalid year' });
     }
-    const yearNum = yearParsed ?? world.meta.startYear;
-    const changes = world.territorialChanges.filter((change) => change.year === yearNum);
-    return reply.send(changes);
+    const fromParsed = parseOptionalInt(from);
+    if (from !== undefined && fromParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid from' });
+    }
+    const toParsed = parseOptionalInt(to);
+    if (to !== undefined && toParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid to' });
+    }
+    if (yearParsed !== undefined) {
+      const changes = world.territorialChanges.filter((change) => change.year === yearParsed);
+      return reply.send(changes);
+    }
+    const fromYear = fromParsed ?? world.meta.startYear;
+    const toYear = toParsed ?? world.meta.endYear;
+    const filtered = world.territorialChanges.filter((change) => change.year >= fromYear && change.year <= toYear);
+    const typed = type ? filtered.filter((change) => change.type === type) : filtered;
+    const sorted = typed.sort((a, b) => a.year - b.year);
+    return reply.send(sorted);
+  });
+
+  app.get('/world/:worldId/years/summary', async (request, reply) => {
+    const { worldId } = request.params as { worldId: string };
+    const { from, to } = request.query as { from?: string; to?: string };
+    const world = worlds.get(worldId);
+    const indexes = worldIndexes.get(worldId);
+    if (!world || !indexes) return reply.code(404).send({ error: 'world not found' });
+    const fromParsed = parseOptionalInt(from);
+    if (from !== undefined && fromParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid from' });
+    }
+    const toParsed = parseOptionalInt(to);
+    if (to !== undefined && toParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid to' });
+    }
+    const fromYear = fromParsed ?? world.meta.startYear;
+    const toYear = toParsed ?? world.meta.endYear;
+    const summary = [];
+    for (let year = fromYear; year <= toYear; year += 1) {
+      const eventIds = indexes.eventsByYear.get(year) ?? [];
+      const events = eventIds.map((id) => indexes.eventsById.get(id)).filter(Boolean) as TimelineEvent[];
+      const counts: Record<string, number> = {};
+      const headline = events
+        .map((event) => ({
+          id: event.id,
+          score: (event.actors.primary?.length ?? 0) + (event.actors.secondary?.length ?? 0) + event.effects.length
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map((item) => item.id);
+      for (const event of events) {
+        counts[event.type] = (counts[event.type] ?? 0) + 1;
+      }
+      summary.push({ year, counts, headline });
+    }
+    return reply.send(summary);
+  });
+
+  app.get('/world/:worldId/events/search', async (request, reply) => {
+    const { worldId } = request.params as { worldId: string };
+    const { q, limit } = request.query as { q?: string; limit?: string };
+    const world = worlds.get(worldId);
+    const indexes = worldIndexes.get(worldId);
+    if (!world || !indexes) return reply.code(404).send({ error: 'world not found' });
+    const limitParsed = parseOptionalInt(limit);
+    if (limit !== undefined && limitParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid limit' });
+    }
+    if (!q) return reply.send([]);
+    const results = searchWorldIndexes(indexes, q, limitParsed ?? 20);
+    return reply.send(results);
+  });
+
+  app.get('/world/:worldId/polity/:id/history', async (request, reply) => {
+    const { worldId, id } = request.params as { worldId: string; id: string };
+    const { from, to } = request.query as { from?: string; to?: string };
+    const world = worlds.get(worldId);
+    const indexes = worldIndexes.get(worldId);
+    if (!world || !indexes) return reply.code(404).send({ error: 'world not found' });
+    const fromParsed = parseOptionalInt(from);
+    if (from !== undefined && fromParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid from' });
+    }
+    const toParsed = parseOptionalInt(to);
+    if (to !== undefined && toParsed === undefined) {
+      return reply.code(400).send({ error: 'invalid to' });
+    }
+    const fromYear = fromParsed ?? world.meta.startYear;
+    const toYear = toParsed ?? world.meta.endYear;
+    const eventIds = indexes.eventsByPolity.get(id) ?? [];
+    const events = eventIds
+      .map((eventId) => indexes.eventsById.get(eventId))
+      .filter((event): event is TimelineEvent => Boolean(event))
+      .filter((event) => event.year >= fromYear && event.year <= toYear);
+    const changeIds = indexes.changesByPolity.get(id) ?? [];
+    const changes = changeIds
+      .map((changeId) => indexes.changesById.get(changeId))
+      .filter((change): change is WorldBundle['territorialChanges'][number] => Boolean(change))
+      .filter((change) => change.year >= fromYear && change.year <= toYear);
+    const statsSeries = (indexes.polityStatsSeries.get(id) ?? []).filter((point) => point.year >= fromYear && point.year <= toYear);
+    return reply.send({ events, changes, statsSeries });
   });
 
   app.get('/world/:worldId/export', async (request, reply) => {
