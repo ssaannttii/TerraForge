@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "fastify": "^4.28.1",
+    "fastify": "^5.7.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -23,5 +23,8 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3",
     "vitest": "^1.6.0"
+  },
+  "overrides": {
+    "esbuild": "^0.25.1"
   }
 }
