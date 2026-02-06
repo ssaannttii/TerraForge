@@ -1,0 +1,40 @@
+{
+  "seed": 202,
+  "planet": {
+    "radiusKm": 6371,
+    "oceanCoverage": 0.68,
+    "numContinents": 5,
+    "mapWidth": 240,
+    "mapHeight": 120,
+    "tectonicsMode": "lite",
+    "climateModel": "koppen-lite"
+  },
+  "societies": {
+    "numCultureGroups": 45,
+    "numCitiesTarget": 180,
+    "numPolitiesTarget": 120,
+    "startingYear": 0,
+    "endingYear": 1500,
+    "techPace": "medium",
+    "migrationIntensity": 0.35
+  },
+  "geopolitics": {
+    "aggression": 0.5,
+    "diplomacyBias": 0.55,
+    "coalitionTendency": 0.55,
+    "imperialOverreachPenalty": 0.5,
+    "resourceNeedWeight": 0.5,
+    "culturalAffinityWeight": 0.55,
+    "warCostModel": "logistics-terrain",
+    "annexationRules": {
+      "allowVassalization": true,
+      "allowFullAbsorb": true,
+      "maxAnnexationPerDecadePct": 0.15
+    }
+  },
+  "output": {
+    "detail": "standard",
+    "snapshotsEveryYears": 10,
+    "exportFormats": ["json", "csv", "geojson"]
+  }
+}
