@@ -10,13 +10,20 @@ Deterministic planet + geopolitics generator with a CLI and REST API. Produces a
 
 ## Install
 ```bash
+# pnpm (recommended)
+corepack enable
+corepack prepare pnpm@latest --activate
 pnpm install
 pnpm build
+
+# npm (fallback)
+npm install
+npm run build
 ```
 
 ## CLI Usage
 ```bash
-# Generate world
+# Generate world (build first so dist/ exists)
 node dist/cli/index.js generate --config examples/medium.json --out out/
 
 # Run API server
@@ -72,6 +79,8 @@ Events include causes and explanations. War outcomes produce territorial changes
 ## Development
 ```bash
 pnpm test
+# or
+npm test
 ```
 
 ## Viewer
