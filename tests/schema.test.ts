@@ -5,7 +5,7 @@ import { ConfigSchema, WorldBundleSchema } from '../src/core/schema.js';
 const config = ConfigSchema.parse({
   seed: 77,
   planet: { mapWidth: 50, mapHeight: 25, numContinents: 3, oceanCoverage: 0.65, radiusKm: 6371, tectonicsMode: 'lite', climateModel: 'koppen-lite' },
-  societies: { numCultureGroups: 20, numCitiesTarget: 20, numPolitiesTarget: 20, startingYear: 0, endingYear: 50, techPace: 'medium', migrationIntensity: 0.3 },
+  societies: { numCultureGroups: 20, numCitiesTarget: 20, numPolitiesTarget: 50, startingYear: 0, endingYear: 50, techPace: 'medium', migrationIntensity: 0.3 },
   geopolitics: {
     aggression: 0.4,
     diplomacyBias: 0.6,
