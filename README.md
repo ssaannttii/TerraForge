@@ -4,9 +4,16 @@ Deterministic planet + geopolitics generator with a CLI and REST API. Produces a
 
 ## Features
 - Deterministic world generation with seeded PRNG (no `Math.random`).
-- Pipeline phases: planet -> cultures -> cities -> polities -> timeline simulation.
+- Pipeline phases: planet → cultures → cities → polities → timeline simulation.
 - Snapshot + delta timeline indexing for efficient temporal queries.
-- CLI + Fastify API endpoints per spec.
+- History-first viewer with timeline navigation, search, and story trails.
+
+## Quickstart
+```bash
+pnpm install && pnpm build
+node dist/cli/index.js view --config examples/small.json
+```
+The viewer auto-opens in your browser and prints the URL. Use <kbd>/</kbd> to focus search, <kbd>Enter</kbd> to open the first result, and <kbd>Esc</kbd> to close search.
 
 ## Install
 ```bash
@@ -30,7 +37,7 @@ node dist/cli/index.js generate --config examples/medium.json --out out/
 node dist/cli/index.js serve --config examples/medium.json
 
 # Launch viewer + open browser
-node dist/cli/index.js view --config examples/small.json
+node dist/cli/index.js view --config examples/small.json --out out/
 
 # Query snapshot or polity
 node dist/cli/index.js query --world out/world.json --year 500
@@ -44,7 +51,7 @@ node dist/cli/index.js export --world out/world.json --format geojson --year 500
 ## API Endpoints
 - `GET /health`
 - `GET /worlds`
-- `POST /generate` -> `{ worldId, bundle }`
+- `POST /generate` → `{ worldId, bundle }`
 - `GET /world/:worldId/meta`
 - `GET /world/:worldId/map?layer=political|biome|elevation|resources&year=YYYY`
 - `GET /world/:worldId/polities?year=YYYY&sort=powerScore&limit=...`
@@ -52,12 +59,24 @@ node dist/cli/index.js export --world out/world.json --format geojson --year 500
 - `GET /world/:worldId/timeline?from=Y1&to=Y2&type=...`
 - `GET /world/:worldId/war/:id`
 - `GET /world/:worldId/changes?year=YYYY`
+- `GET /world/:worldId/changes?from=Y1&to=Y2&type=...`
+- `GET /world/:worldId/years/summary?from=Y1&to=Y2`
+- `GET /world/:worldId/events/search?q=...&limit=...`
+- `GET /world/:worldId/polity/:id/history?from=Y1&to=Y2`
 - `GET /world/:worldId/export?format=...`
 - `GET /viewer` (HTML)
 - `GET /viewer/app.js`
 - `GET /viewer/style.css`
 - Invalid numeric query params (year/from/to/limit) return `400 { error: "invalid <param>" }`.
 - Invalid `/generate` config returns `400 { error: "invalid config", details: [...] }`.
+
+## Viewer
+- Timeline-first layout: jump to years, heatmap navigation, and grouped events.
+- Instant search across polities, wars, events, and changes.
+- Story cards show causes, actors, and effects with links to wars and treaties.
+- Absorption ledger and top powers over time views for quick context.
+
+The viewer is served from `src/viewer` and expects to run from the repo root so it can read those files at runtime.
 
 ## Output Formats
 - **JSON**: `WorldBundle` (deterministically ordered fields).
@@ -82,14 +101,3 @@ pnpm test
 # or
 npm test
 ```
-
-## Viewer
-```bash
-pnpm build
-node dist/cli/index.js serve --config examples/medium.json
-# open http://localhost:3000/viewer
-
-# Or launch and auto-open
-node dist/cli/index.js view --config examples/small.json
-```
-The viewer is served from `src/viewer` and expects to run from the repo root so it can read those files at runtime.

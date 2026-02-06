@@ -15,7 +15,7 @@ describe('viewer assets', () => {
   it('serves viewer HTML', async () => {
     const response = await app.inject({ method: 'GET', url: '/viewer' });
     expect(response.statusCode).toBe(200);
-    expect(response.payload).toContain('TerraForge Viewer');
+    expect(response.payload).toContain('History-first world viewer');
   });
 
   it('serves viewer app.js', async () => {
