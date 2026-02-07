@@ -1,44 +1,54 @@
 import { z } from 'zod';
 
+const PlanetSchema = z.object({
+  radiusKm: z.number().default(6371),
+  oceanCoverage: z.number().min(0.6).max(0.75).default(0.68),
+  numContinents: z.number().min(3).max(8).default(5),
+  mapWidth: z.number().default(240),
+  mapHeight: z.number().default(120),
+  tectonicsMode: z.enum(['lite', 'none']).default('lite'),
+  climateModel: z.enum(['koppen-lite']).default('koppen-lite')
+}).default({});
+
+const SocietiesSchema = z.object({
+  numCultureGroups: z.number().min(20).max(80).default(40),
+  numCitiesTarget: z.number().default(180),
+  numPolitiesTarget: z.number().min(50).max(400).default(120),
+  startingYear: z.number().default(0),
+  endingYear: z.number().default(1500),
+  techPace: z.enum(['slow', 'medium', 'fast']).default('medium'),
+  migrationIntensity: z.number().min(0).max(1).default(0.35)
+}).default({});
+
+const AnnexationRulesSchema = z.object({
+  allowVassalization: z.boolean().default(true),
+  allowFullAbsorb: z.boolean().default(true),
+  maxAnnexationPerDecadePct: z.number().default(0.15)
+}).default({});
+
+const GeopoliticsSchema = z.object({
+  aggression: z.number().min(0).max(1).default(0.45),
+  diplomacyBias: z.number().min(0).max(1).default(0.55),
+  coalitionTendency: z.number().min(0).max(1).default(0.5),
+  imperialOverreachPenalty: z.number().min(0).max(1).default(0.5),
+  resourceNeedWeight: z.number().min(0).max(1).default(0.45),
+  culturalAffinityWeight: z.number().min(0).max(1).default(0.5),
+  warCostModel: z.enum(['logistics-terrain']).default('logistics-terrain'),
+  annexationRules: AnnexationRulesSchema
+}).default({});
+
+const OutputSchema = z.object({
+  detail: z.enum(['summary', 'standard', 'full']).default('standard'),
+  snapshotsEveryYears: z.number().default(10),
+  exportFormats: z.array(z.enum(['json', 'csv', 'geojson'])).default(['json'])
+}).default({});
+
 export const ConfigSchema = z.object({
-  seed: z.number(),
-  planet: z.object({
-    radiusKm: z.number().default(6371),
-    oceanCoverage: z.number().min(0.6).max(0.75).default(0.68),
-    numContinents: z.number().min(3).max(8).default(5),
-    mapWidth: z.number().default(240),
-    mapHeight: z.number().default(120),
-    tectonicsMode: z.enum(['lite', 'none']).default('lite'),
-    climateModel: z.enum(['koppen-lite']).default('koppen-lite')
-  }),
-  societies: z.object({
-    numCultureGroups: z.number().min(20).max(80).default(40),
-    numCitiesTarget: z.number().default(180),
-    numPolitiesTarget: z.number().min(50).max(400).default(120),
-    startingYear: z.number().default(0),
-    endingYear: z.number().default(1500),
-    techPace: z.enum(['slow', 'medium', 'fast']).default('medium'),
-    migrationIntensity: z.number().min(0).max(1).default(0.35)
-  }),
-  geopolitics: z.object({
-    aggression: z.number().min(0).max(1).default(0.45),
-    diplomacyBias: z.number().min(0).max(1).default(0.55),
-    coalitionTendency: z.number().min(0).max(1).default(0.5),
-    imperialOverreachPenalty: z.number().min(0).max(1).default(0.5),
-    resourceNeedWeight: z.number().min(0).max(1).default(0.45),
-    culturalAffinityWeight: z.number().min(0).max(1).default(0.5),
-    warCostModel: z.enum(['logistics-terrain']).default('logistics-terrain'),
-    annexationRules: z.object({
-      allowVassalization: z.boolean().default(true),
-      allowFullAbsorb: z.boolean().default(true),
-      maxAnnexationPerDecadePct: z.number().default(0.15)
-    })
-  }),
-  output: z.object({
-    detail: z.enum(['summary', 'standard', 'full']).default('standard'),
-    snapshotsEveryYears: z.number().default(10),
-    exportFormats: z.array(z.enum(['json', 'csv', 'geojson'])).default(['json'])
-  })
+  seed: z.number().default(42),
+  planet: PlanetSchema,
+  societies: SocietiesSchema,
+  geopolitics: GeopoliticsSchema,
+  output: OutputSchema
 });
 
 export type TerraForgeConfig = z.infer<typeof ConfigSchema>;

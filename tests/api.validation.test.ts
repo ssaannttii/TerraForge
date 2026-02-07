@@ -65,7 +65,7 @@ describe('api validation', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/generate',
-      payload: {}
+      payload: { seed: 'not-a-number' }
     });
     const body = JSON.parse(response.payload) as { error: string; details?: unknown[] };
     expect(response.statusCode).toBe(400);

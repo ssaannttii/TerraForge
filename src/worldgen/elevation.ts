@@ -1,9 +1,9 @@
 import { PRNG } from '../core/prng.js';
+import { ELEVATION_OCTAVES } from '../core/constants.js';
 
 export function generateElevation(width: number, height: number, prng: PRNG): number[] {
   const values = new Array<number>(width * height).fill(0);
-  const octaves = 4;
-  for (let o = 0; o < octaves; o += 1) {
+  for (let o = 0; o < ELEVATION_OCTAVES; o += 1) {
     const frequency = 2 ** o;
     const amplitude = 1 / (o + 1);
     const gridW = Math.ceil(width / frequency) + 1;

@@ -2,6 +2,7 @@ import { PRNG } from '../core/prng.js';
 import { City, PolityState, PolityType } from '../core/types.js';
 import { compressRanges } from '../core/utils/compress.js';
 import { formatPolityName, generateName } from '../worldgen/naming.js';
+import { POP_DENSITY_MIN, POP_DENSITY_MAX, GDP_PER_CAPITA_MIN, GDP_PER_CAPITA_MAX, TECH_LEVEL_MIN, TECH_LEVEL_RANGE, POWER_SCORE_CAP } from '../core/constants.js';
 
 const polityTypes: PolityType[] = ['kingdom', 'republic', 'empire', 'city-state', 'tribal', 'federation'];
 
@@ -57,9 +58,9 @@ export function generatePolities(
     const type = polityTypes[index % polityTypes.length];
     const name = formatPolityName(baseName, type);
     const territoryIds = territories.get(city.id) ?? [];
-    const population = territoryIds.length * prng.nextInt(200, 700);
-    const gdp = population * prng.nextInt(2, 6);
-    const techLevel = prng.nextFloat01() * 0.6 + 0.2;
+    const population = territoryIds.length * prng.nextInt(POP_DENSITY_MIN, POP_DENSITY_MAX);
+    const gdp = population * prng.nextInt(GDP_PER_CAPITA_MIN, GDP_PER_CAPITA_MAX);
+    const techLevel = prng.nextFloat01() * TECH_LEVEL_RANGE + TECH_LEVEL_MIN;
     const stats = {
       population,
       gdp,
@@ -110,7 +111,7 @@ function computePowerScore(stats: {
     stats.stability * 6 +
     stats.legitimacy * 4 +
     stats.logistics * 6;
-  return Math.min(100, base + modifiers);
+  return Math.min(POWER_SCORE_CAP, base + modifiers);
 }
 
 function mapOwnersToPolities(ownerByCell: string[], cities: City[], polities: PolityState[]): string[] {
