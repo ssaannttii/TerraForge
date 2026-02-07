@@ -1,3 +1,5 @@
+import { ELEVATION_TEMP_WEIGHT, BASE_HUMIDITY, LATITUDE_HUMIDITY_DIVISOR, OCEAN_HUMIDITY_BONUS } from '../core/constants.js';
+
 export type ClimateCell = { biomeId: string; temperature: number; humidity: number };
 
 export function computeClimate(width: number, height: number, elevation: number[], isOcean: boolean[]): ClimateCell[] {
@@ -9,9 +11,9 @@ export function computeClimate(width: number, height: number, elevation: number[
     for (let x = 0; x < width; x += 1) {
       const idx = y * width + x;
       const elevNorm = (elevation[idx] - minElevation) / (maxElevation - minElevation + 1e-6);
-      const temperature = 1 - Math.abs(lat) / 90 - elevNorm * 0.4;
-      let humidity = 0.6 - Math.abs(lat) / 120;
-      if (isOcean[idx]) humidity += 0.2;
+      const temperature = 1 - Math.abs(lat) / 90 - elevNorm * ELEVATION_TEMP_WEIGHT;
+      let humidity = BASE_HUMIDITY - Math.abs(lat) / LATITUDE_HUMIDITY_DIVISOR;
+      if (isOcean[idx]) humidity += OCEAN_HUMIDITY_BONUS;
       const biomeId = pickBiome(temperature, humidity, isOcean[idx]);
       climate.push({ biomeId, temperature, humidity });
     }

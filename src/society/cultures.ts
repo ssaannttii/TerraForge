@@ -1,5 +1,6 @@
 import { PRNG } from '../core/prng.js';
 import { CultureGroup } from '../core/types.js';
+import { generateCultureName } from '../worldgen/naming.js';
 
 const traitKeys = ['martial', 'trade', 'seafaring', 'agrarian', 'nomadic'];
 
@@ -10,6 +11,7 @@ export function generateCultureGroups(
 ): CultureGroup[] {
   const cultures: CultureGroup[] = [];
   const used = new Set<number>();
+  const nameRegistry = new Set<string>();
   for (let i = 0; i < numGroups; i += 1) {
     const seedCell = habitableCells[prng.nextInt(0, habitableCells.length - 1)];
     if (used.has(seedCell)) continue;
@@ -24,9 +26,10 @@ export function generateCultureGroups(
     for (const key of traitKeys) {
       traits[key] = traits[key] / total;
     }
+    const name = generateCultureName(prng, traits, nameRegistry);
     cultures.push({
       id: `cult-${i + 1}`,
-      name: `Culture ${i + 1}`,
+      name,
       traits,
       coreRegionIds: [seedCell]
     });

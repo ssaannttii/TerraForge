@@ -2,6 +2,13 @@ import { PRNG } from '../core/prng.js';
 import { Delta, PolityState, TimelineEvent, Treaty, TerritorialChange, War } from '../core/types.js';
 import { compressRanges } from '../core/utils/compress.js';
 import { snapshotFromState } from './snapshots.js';
+import {
+  POP_GROWTH_BASE, POP_GROWTH_VARIANCE, GDP_GROWTH_BASE, GDP_GROWTH_VARIANCE,
+  TECH_GROWTH_BASE, TECH_GROWTH_VARIANCE, STABILITY_SHIFT_RANGE,
+  WAR_INTERVAL_YEARS, WAR_END_CHANCE, WAR_MIN_DURATION_YEARS,
+  BATTLES_PER_YEAR_MIN, BATTLES_PER_YEAR_MAX, CASUALTY_MIN, CASUALTY_MAX,
+  SIEGE_CHANCE, STAT_FLOOR, POWER_SCORE_CAP
+} from '../core/constants.js';
 
 export type SimulationOutput = {
   politiesInitial: PolityState[];
@@ -40,19 +47,19 @@ export function simulateTimeline(
 
     for (const polity of polities) {
       const before = { ...polity.stats };
-      const growth = 0.01 + prng.nextFloat01() * 0.01;
-      const gdpGrowth = 0.015 + prng.nextFloat01() * 0.02;
-      const techGrowth = 0.001 + prng.nextFloat01() * 0.0015;
-      const stabilityShift = (prng.nextFloat01() - 0.5) * 0.01;
+      const growth = POP_GROWTH_BASE + prng.nextFloat01() * POP_GROWTH_VARIANCE;
+      const gdpGrowth = GDP_GROWTH_BASE + prng.nextFloat01() * GDP_GROWTH_VARIANCE;
+      const techGrowth = TECH_GROWTH_BASE + prng.nextFloat01() * TECH_GROWTH_VARIANCE;
+      const stabilityShift = (prng.nextFloat01() - 0.5) * STABILITY_SHIFT_RANGE;
 
       polity.stats.population *= 1 + growth;
       polity.stats.gdp *= 1 + gdpGrowth;
       polity.stats.techLevel = Math.min(1, polity.stats.techLevel + techGrowth);
-      polity.stats.stability = clamp(polity.stats.stability + stabilityShift, 0.1, 1);
-      polity.stats.legitimacy = clamp(polity.stats.legitimacy + stabilityShift * 0.5, 0.1, 1);
-      polity.stats.logistics = clamp(polity.stats.logistics + techGrowth * 2, 0.1, 1);
-      polity.stats.military = clamp(polity.stats.military + techGrowth * 1.5, 0.1, 1);
-      polity.stats.powerScore = Math.min(100, polity.stats.powerScore + gdpGrowth * 2 + techGrowth * 10);
+      polity.stats.stability = clamp(polity.stats.stability + stabilityShift, STAT_FLOOR, 1);
+      polity.stats.legitimacy = clamp(polity.stats.legitimacy + stabilityShift * 0.5, STAT_FLOOR, 1);
+      polity.stats.logistics = clamp(polity.stats.logistics + techGrowth * 2, STAT_FLOOR, 1);
+      polity.stats.military = clamp(polity.stats.military + techGrowth * 1.5, STAT_FLOOR, 1);
+      polity.stats.powerScore = Math.min(POWER_SCORE_CAP, polity.stats.powerScore + gdpGrowth * 2 + techGrowth * 10);
 
       yearlyUpdates.push({
         polityId: polity.id,
@@ -69,7 +76,7 @@ export function simulateTimeline(
       });
     }
 
-    if (year % 7 === 0) {
+    if (year % WAR_INTERVAL_YEARS === 0) {
       const a = polities[prng.nextInt(0, polities.length - 1)];
       const b = polities[prng.nextInt(0, polities.length - 1)];
       if (a.id !== b.id) {
@@ -106,7 +113,7 @@ export function simulateTimeline(
     }
 
     for (const [warId, war] of activeWars) {
-      const battleCount = prng.nextInt(1, 3);
+      const battleCount = prng.nextInt(BATTLES_PER_YEAR_MIN, BATTLES_PER_YEAR_MAX);
       for (let i = 0; i < battleCount; i += 1) {
         const battleId = `${warId}-battle-${war.battles.length + 1}`;
         const result = prng.nextFloat01() > 0.5 ? 'A_VICTORY' : 'B_VICTORY';
@@ -114,15 +121,15 @@ export function simulateTimeline(
           id: battleId,
           year,
           locationCellId: prng.nextInt(0, ownerByCell.length - 1),
-          type: prng.nextFloat01() > 0.2 ? 'FIELD' : 'SIEGE',
+          type: prng.nextFloat01() > SIEGE_CHANCE ? 'FIELD' : 'SIEGE',
           result,
-          casualtiesEstimate: { A: prng.nextInt(200, 2000), B: prng.nextInt(200, 2000) },
+          casualtiesEstimate: { A: prng.nextInt(CASUALTY_MIN, CASUALTY_MAX), B: prng.nextInt(CASUALTY_MIN, CASUALTY_MAX) },
           factors: ['logistics', 'terrain', 'morale'],
           explanation: ['A clash defined by supply lines and terrain advantages.']
         });
       }
 
-      if (prng.nextFloat01() > 0.7 && year - war.startYear > 3) {
+      if (prng.nextFloat01() < WAR_END_CHANCE && year - war.startYear > WAR_MIN_DURATION_YEARS) {
         war.endYear = year;
         war.outcome = prng.nextFloat01() > 0.5 ? 'A_WIN' : 'B_WIN';
         const winner = war.outcome === 'A_WIN' ? war.sides.A[0] : war.sides.B[0];

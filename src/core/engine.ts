@@ -13,6 +13,7 @@ import { generateCultureGroups } from '../society/cultures.js';
 import { generateCities } from '../society/cities.js';
 import { generatePolities } from '../society/polities.js';
 import { simulateTimeline } from '../sim/sim.js';
+import { generateContinentName } from '../worldgen/naming.js';
 
 export function generateWorld(config: TerraForgeConfig): WorldBundle {
   const prng = new PRNG(config.seed);
@@ -54,7 +55,7 @@ export function generateWorld(config: TerraForgeConfig): WorldBundle {
   const continents = generateContinents(config.planet.numContinents, habitableCells, prng.fork('continents'));
   const cultureGroups = generateCultureGroups(prng.fork('cultures'), habitableCells, config.societies.numCultureGroups);
   const cityCandidates = habitableCells.filter((id) => riverIds[id] > 0 || resources[id].includes('fertile'));
-  const cities = generateCities(prng.fork('cities'), cityCandidates, config.societies.numCitiesTarget, cultureGroups.map((c) => c.id));
+  const cities = generateCities(prng.fork('cities'), cityCandidates, config.societies.numCitiesTarget, cultureGroups);
   const polityCities = cities.slice(0, Math.min(config.societies.numPolitiesTarget, cities.length));
   const { polities, ownerByCell } = generatePolities(prng.fork('polities'), polityCities, mapWidth, mapHeight, isOcean, resources);
   const sim = simulateTimeline(prng.fork('sim'), polities, ownerByCell, config.societies.startingYear, config.societies.endingYear, config.output.snapshotsEveryYears);
@@ -93,6 +94,7 @@ export function generateWorld(config: TerraForgeConfig): WorldBundle {
 
 function generateContinents(count: number, habitableCells: number[], prng: PRNG): Continent[] {
   const continents: Continent[] = [];
+  const nameRegistry = new Set<string>();
   const chunk = Math.floor(habitableCells.length / count);
   for (let i = 0; i < count; i += 1) {
     const start = i * chunk;
@@ -100,7 +102,7 @@ function generateContinents(count: number, habitableCells: number[], prng: PRNG)
     const cells = habitableCells.slice(start, end);
     continents.push({
       id: `cont-${i + 1}`,
-      name: `Continent ${i + 1}`,
+      name: generateContinentName(prng, nameRegistry),
       cellIds: prng.shuffle(cells).slice(0, Math.min(cells.length, 1200))
     });
   }

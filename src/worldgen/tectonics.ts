@@ -1,7 +1,8 @@
 import { PRNG } from '../core/prng.js';
+import { PLATES_MIN, PLATES_MAX, RIDGE_FREQUENCY, RIDGE_AMPLITUDE } from '../core/constants.js';
 
 export function applyTectonics(width: number, height: number, elevation: number[], prng: PRNG): void {
-  const plates = prng.nextInt(4, 8);
+  const plates = prng.nextInt(PLATES_MIN, PLATES_MAX);
   const centers = Array.from({ length: plates }, () => ({
     x: prng.nextInt(0, width - 1),
     y: prng.nextInt(0, height - 1),
@@ -21,8 +22,8 @@ export function applyTectonics(width: number, height: number, elevation: number[
         }
       }
       const idx = y * width + x;
-      const ridge = Math.cos((x + y) * 0.05 + closest.drift);
-      elevation[idx] += ridge * 0.35;
+      const ridge = Math.cos((x + y) * RIDGE_FREQUENCY + closest.drift);
+      elevation[idx] += ridge * RIDGE_AMPLITUDE;
     }
   }
 }

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { z } from 'zod';
 import { ConfigSchema } from '../core/schema.js';
 import { generateWorld } from '../core/engine.js';
 import { stableStringify } from '../core/hashing.js';
@@ -13,15 +14,48 @@ const program = new Command();
 
 program
   .name('terraforge')
-  .description('Generate deterministic worlds and geopolitics');
+  .description('Generate deterministic worlds and geopolitics')
+  .version('0.1.0');
+
+/** Load config from file or build one from CLI flags. */
+const resolveConfig = async (opts: { config?: string; seed?: string }) => {
+  if (opts.config) {
+    let raw: string;
+    try {
+      raw = await readFile(opts.config, 'utf-8');
+    } catch {
+      throw new Error(`Config file not found: ${opts.config}`);
+    }
+    try {
+      return ConfigSchema.parse(JSON.parse(raw));
+    } catch (err) {
+      if (err instanceof SyntaxError) throw new Error(`Invalid JSON in config file: ${err.message}`);
+      throw err;
+    }
+  }
+  const overrides: Record<string, unknown> = {};
+  if (opts.seed) overrides.seed = Number(opts.seed);
+  return ConfigSchema.parse(overrides);
+};
+
+/** Format a user-friendly error message. */
+const formatError = (err: unknown): string => {
+  if (err instanceof z.ZodError) {
+    const issues = err.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    return `Invalid configuration:\n${issues}`;
+  }
+  if (err instanceof Error) return err.message;
+  return String(err);
+};
 
 program
   .command('generate')
-  .requiredOption('--config <path>')
-  .requiredOption('--out <dir>')
+  .option('--config <path>', 'path to config JSON file')
+  .option('--seed <number>', 'world seed (default: 42)')
+  .option('--out <dir>', 'output directory', 'out')
   .action(async (opts) => {
-    const raw = await readFile(opts.config, 'utf-8');
-    const config = ConfigSchema.parse(JSON.parse(raw));
+    const config = await resolveConfig(opts);
+    console.log(`Generating world with seed ${config.seed}...`);
     const bundle = generateWorld(config);
     await mkdir(opts.out, { recursive: true });
     await mkdir(`${opts.out}/index`, { recursive: true });
@@ -29,14 +63,17 @@ program
     await writeFile(`${opts.out}/index/snapshots.json`, stableStringify(bundle.timelineIndex.snapshots), 'utf-8');
     await writeFile(`${opts.out}/index/deltas.json`, stableStringify(bundle.timelineIndex.deltasBetweenSnapshots), 'utf-8');
     console.log(`World generated at ${opts.out}`);
+    console.log(`  Seed: ${config.seed} | Map: ${config.planet.mapWidth}x${config.planet.mapHeight}`);
+    console.log(`  ${bundle.cities.length} cities, ${bundle.politiesInitial.length} polities, ${bundle.wars.length} wars`);
+    console.log(`  Timeline: year ${config.societies.startingYear} to ${config.societies.endingYear}`);
   });
 
 program
   .command('serve')
-  .requiredOption('--config <path>')
+  .option('--config <path>', 'path to config JSON file')
+  .option('--seed <number>', 'world seed (default: 42)')
   .action(async (opts) => {
-    const raw = await readFile(opts.config, 'utf-8');
-    const config = ConfigSchema.parse(JSON.parse(raw));
+    const config = await resolveConfig(opts);
     const { buildServer } = await import('../api/server.js');
     const app = buildServer();
     const bundle = generateWorld(config);
@@ -146,14 +183,14 @@ const listenWithFallback = async (app: any, host: string, port: number) => {
 
 program
   .command('view')
-  .option('--config <path>', 'config path', 'examples/small.json')
+  .option('--config <path>', 'path to config JSON file')
+  .option('--seed <number>', 'world seed (default: 42)')
   .option('--port <port>', 'port for the viewer', '3000')
   .option('--host <host>', 'host for the viewer', '127.0.0.1')
   .option('--out <dir>', 'output dir for world + indexes')
   .action(async (opts) => {
     await ensureBuild();
-    const raw = await readFile(opts.config, 'utf-8');
-    const config = ConfigSchema.parse(JSON.parse(raw));
+    const config = await resolveConfig(opts);
     const { buildServer } = await import('../api/server.js');
     const app = buildServer();
     const bundle = generateWorld(config);
@@ -215,4 +252,7 @@ program
     console.log(`Exported to ${opts.out}`);
   });
 
-program.parseAsync(process.argv);
+program.parseAsync(process.argv).catch((err) => {
+  console.error(`Error: ${formatError(err)}`);
+  process.exit(1);
+});
