@@ -40,15 +40,31 @@ describe('history endpoints', () => {
     const response = await app.inject({ method: 'GET', url: `/world/${worldId}/years/summary?from=0&to=10` });
     expect(response.statusCode).toBe(200);
     const payload = response.json();
-    expect(Array.isArray(payload)).toBe(true);
-    expect(payload[0]).toHaveProperty('counts');
+    expect(payload).toHaveProperty('years');
+    expect(Array.isArray(payload.years)).toBe(true);
+    expect(payload.years[0]).toHaveProperty('counts');
+  });
+
+  it('validates summary query params', async () => {
+    const response = await app.inject({ method: 'GET', url: `/world/${worldId}/years/summary?from=oops&to=10` });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toHaveProperty('error');
   });
 
   it('searches events', async () => {
-    const response = await app.inject({ method: 'GET', url: `/world/${worldId}/events/search?q=war&limit=5` });
+    const response = await app.inject({ method: 'GET', url: `/world/${worldId}/search?q=war&limit=5` });
     expect(response.statusCode).toBe(200);
     const payload = response.json();
-    expect(Array.isArray(payload)).toBe(true);
+    expect(payload).toHaveProperty('results');
+    expect(Array.isArray(payload.results)).toBe(true);
+  });
+
+  it('returns deterministic search ordering', async () => {
+    const responseA = await app.inject({ method: 'GET', url: `/world/${worldId}/search?q=war&limit=10` });
+    const responseB = await app.inject({ method: 'GET', url: `/world/${worldId}/search?q=war&limit=10` });
+    expect(responseA.statusCode).toBe(200);
+    expect(responseB.statusCode).toBe(200);
+    expect(responseA.json()).toEqual(responseB.json());
   });
 
   it('returns polity history', async () => {
@@ -57,7 +73,8 @@ describe('history endpoints', () => {
     const payload = response.json();
     expect(payload).toHaveProperty('events');
     expect(payload).toHaveProperty('changes');
-    expect(payload).toHaveProperty('statsSeries');
+    expect(payload).toHaveProperty('series');
+    expect(payload.series).toHaveProperty('years');
   });
 
   it('returns changes in a range', async () => {

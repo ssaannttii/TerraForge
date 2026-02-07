@@ -66,20 +66,23 @@ class LRUCache {
 const state = {
   worlds: [],
   worldId: null,
-  world: null,
+  worldMeta: null,
+  planet: null,
+  cells: null,
   year: null,
   layer: 'political',
+  summaryByYear: new Map(),
+  wars: [],
+  politiesById: new Map(),
   mapCache: new LRUCache(200),
   ownerCache: new Map(),
-  polityById: new Map(),
   selectedPolityId: null,
   selectedWarId: null,
   selectedChangeId: null,
   selectedEventId: null,
-  mapIndexByCoord: null,
-  lastRenderKey: null,
+  selectedChange: null,
+  selectedEvent: null,
   highlightCellId: null,
-  overlayMode: null,
   searchActiveIndex: 0
 };
 
@@ -88,23 +91,24 @@ const elements = {
   worldSelect: document.getElementById('world-select'),
   worldMeta: document.getElementById('world-meta'),
   emptyWorld: document.getElementById('empty-world'),
+  openGenerate: document.getElementById('open-generate'),
+  generateModal: document.getElementById('generate-modal'),
+  closeGenerate: document.getElementById('close-generate'),
   generateConfig: document.getElementById('generate-config'),
   generateWorld: document.getElementById('generate-world'),
   yearSlider: document.getElementById('year-slider'),
   yearInput: document.getElementById('year-input'),
   yearValue: document.getElementById('year-value'),
+  yearTitle: document.getElementById('year-title'),
   timelineHeatmap: document.getElementById('timeline-heatmap'),
   eventsGroups: document.getElementById('events-groups'),
-  ledgerPolity: document.getElementById('ledger-polity'),
-  ledgerType: document.getElementById('ledger-type'),
-  ledgerFrom: document.getElementById('ledger-from'),
-  ledgerTo: document.getElementById('ledger-to'),
-  ledgerRefresh: document.getElementById('ledger-refresh'),
-  ledgerTable: document.getElementById('ledger-table'),
-  topPowersDecade: document.getElementById('top-powers-decade'),
-  topPowersList: document.getElementById('top-powers-list'),
-  storyCard: document.getElementById('story-card'),
+  headlineEvents: document.getElementById('headline-events'),
+  warsOverview: document.getElementById('wars-overview'),
+  absorptionLedger: document.getElementById('absorption-ledger'),
+  topPowers: document.getElementById('top-powers'),
+  inspectorSubtitle: document.getElementById('inspector-subtitle'),
   tabButtons: document.querySelectorAll('.tab-button'),
+  tabEvent: document.getElementById('tab-event'),
   tabPolity: document.getElementById('tab-polity'),
   tabWar: document.getElementById('tab-war'),
   tabChange: document.getElementById('tab-change'),
@@ -120,7 +124,24 @@ const elements = {
 
 const ctx = elements.canvas.getContext('2d');
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const fetchJson = async (url, options) => {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Request failed: ${response.status}`);
+  }
+  return response.json();
+};
+
+const debounce = (fn, delay) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const mapKey = (layer, year) => `${state.worldId}:${layer}:${year}`;
 
 const fnv1a = (value) => {
   let hash = 0x811c9dc5;
@@ -143,23 +164,13 @@ const hslToRgb = (h, s, l) => {
   else if (hp < 5) [r, g, b] = [x, 0, c];
   else if (hp <= 6) [r, g, b] = [c, 0, x];
   const m = l - c / 2;
-  return [
-    Math.round((r + m) * 255),
-    Math.round((g + m) * 255),
-    Math.round((b + m) * 255)
-  ];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 };
 
-const polityColor = (id) => {
+const colorFromId = (id, saturation = 0.55, lightness = 0.55) => {
   const hash = fnv1a(id);
   const hue = hash % 360;
-  return hslToRgb(hue, 0.55, 0.55);
-};
-
-const biomeColor = (id) => {
-  const hash = fnv1a(id);
-  const hue = hash % 360;
-  return hslToRgb(hue, 0.45, 0.5);
+  return hslToRgb(hue, saturation, lightness);
 };
 
 const formatNumber = (value) => {
@@ -172,15 +183,36 @@ const formatNumber = (value) => {
   return String(value);
 };
 
-const debounce = (fn, delay) => {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
+const parseHash = () => {
+  const params = new URLSearchParams(window.location.hash.replace('#', ''));
+  return {
+    world: params.get('world'),
+    year: params.get('year') ? Number(params.get('year')) : null,
+    polity: params.get('polity'),
+    war: params.get('war'),
+    event: params.get('event'),
+    change: params.get('change'),
+    layer: params.get('layer')
   };
 };
 
-const mapKey = (layer, year) => `${state.worldId}:${layer}:${year}`;
+const updateHash = (mode = 'push') => {
+  const params = new URLSearchParams();
+  if (state.worldId) params.set('world', state.worldId);
+  if (state.year !== null) params.set('year', String(state.year));
+  if (state.selectedPolityId) params.set('polity', state.selectedPolityId);
+  if (state.selectedWarId) params.set('war', state.selectedWarId);
+  if (state.selectedEventId) params.set('event', state.selectedEventId);
+  if (state.selectedChangeId) params.set('change', state.selectedChangeId);
+  if (state.layer) params.set('layer', state.layer);
+  const hash = `#${params.toString()}`;
+  if (mode === 'replace') {
+    history.replaceState(null, '', hash);
+    syncFromHash();
+  } else {
+    window.location.hash = hash;
+  }
+};
 
 const decodePoliticalOwners = (rle, length) => {
   const owners = new Array(length).fill('');
@@ -194,797 +226,738 @@ const decodePoliticalOwners = (rle, length) => {
   return owners;
 };
 
-const fetchJson = async (url, options) => {
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`${response.status} ${response.statusText}: ${message}`);
-  }
-  return response.json();
+const cellLatLon = (x, y, width, height) => {
+  const lat = (y / (height - 1)) * 180 - 90;
+  const lon = (x / (width - 1)) * 360 - 180;
+  return { lat, lon };
 };
 
-const buildCoordIndex = (world) => {
-  const index = new Array(world.planet.mapWidth * world.planet.mapHeight).fill(-1);
-  world.cells.forEach((cell, idx) => {
-    const pos = cell.y * world.planet.mapWidth + cell.x;
-    index[pos] = idx;
+const renderWorldMeta = () => {
+  if (!state.worldMeta) return;
+  const { startYear, endYear, summary } = state.worldMeta;
+  const totals = summary?.totals;
+  elements.worldMeta.textContent = `Years ${startYear} - ${endYear} · Wars ${totals?.wars ?? 0} · Battles ${
+    totals?.battles ?? 0
+  } · Annexations ${totals?.annexations ?? 0}`;
+};
+
+const renderTabs = (active) => {
+  elements.tabButtons.forEach((button) => {
+    const tab = button.dataset.tab;
+    const isActive = tab === active;
+    button.classList.toggle('active', isActive);
+    const panel = document.getElementById(`tab-${tab}`);
+    if (panel) panel.classList.toggle('active', isActive);
   });
-  return index;
 };
 
-const getOwnerMap = async () => {
-  const key = mapKey('political', state.year);
-  const cached = state.mapCache.get(key);
-  if (cached) return cached;
-  const rle = await fetchJson(`/world/${state.worldId}/map?layer=political&year=${state.year}`);
-  const owners = decodePoliticalOwners(rle, state.world.cells.length);
-  state.mapCache.set(key, owners);
-  return owners;
+const clearSelections = () => {
+  state.selectedPolityId = null;
+  state.selectedWarId = null;
+  state.selectedEventId = null;
+  state.selectedChangeId = null;
+  state.selectedChange = null;
+  state.selectedEvent = null;
 };
 
-const getLayerData = async (layer) => {
-  const key = mapKey(layer, state.year);
-  const cached = state.mapCache.get(key);
-  if (cached) return cached;
-  const data = await fetchJson(`/world/${state.worldId}/map?layer=${layer}&year=${state.year}`);
-  state.mapCache.set(key, data);
-  return data;
+const selectPolity = (id) => {
+  clearSelections();
+  state.selectedPolityId = id;
+  updateHash();
+};
+
+const selectWar = (id) => {
+  clearSelections();
+  state.selectedWarId = id;
+  updateHash();
+};
+
+const selectEvent = (id) => {
+  clearSelections();
+  state.selectedEventId = id;
+  updateHash();
+};
+
+const selectChange = (id) => {
+  clearSelections();
+  state.selectedChangeId = id;
+  updateHash();
+};
+
+const renderHeatmap = () => {
+  if (!state.worldMeta) return;
+  const canvas = elements.timelineHeatmap;
+  const ctxHeat = canvas.getContext('2d');
+  const { startYear, endYear } = state.worldMeta;
+  const totalYears = endYear - startYear + 1;
+  const width = canvas.clientWidth || 280;
+  canvas.width = width;
+  canvas.height = canvas.height || 64;
+  const height = canvas.height;
+  ctxHeat.clearRect(0, 0, width, height);
+  let maxCount = 1;
+  const counts = [];
+  for (let year = startYear; year <= endYear; year += 1) {
+    const summary = state.summaryByYear.get(year);
+    const count = summary ? Object.values(summary.counts).reduce((acc, value) => acc + value, 0) : 0;
+    counts.push(count);
+    if (count > maxCount) maxCount = count;
+  }
+  const barWidth = width / totalYears;
+  counts.forEach((count, index) => {
+    const intensity = count / maxCount;
+    ctxHeat.fillStyle = `rgba(94, 228, 199, ${0.2 + intensity * 0.8})`;
+    const x = index * barWidth;
+    ctxHeat.fillRect(x, height - intensity * height, Math.max(barWidth - 0.5, 1), intensity * height);
+  });
+};
+
+const renderEventsInYear = (events) => {
+  const groups = {
+    'Wars & Battles': [],
+    'Treaties / Alliances': [],
+    'Annexations / Absorptions / Territorial changes': [],
+    'Internal crises': [],
+    'Economy / Tech milestones': [],
+    'Other events': []
+  };
+  events.forEach((event) => {
+    const type = event.type.toLowerCase();
+    if (type.includes('war')) groups['Wars & Battles'].push(event);
+    else if (type.includes('treaty') || type.includes('alliance')) groups['Treaties / Alliances'].push(event);
+    else if (type.includes('annex') || type.includes('absorb') || type.includes('secession') || type.includes('union')) {
+      groups['Annexations / Absorptions / Territorial changes'].push(event);
+    } else if (type.includes('crisis') || type.includes('rebellion')) groups['Internal crises'].push(event);
+    else if (type.includes('tech') || type.includes('economy')) groups['Economy / Tech milestones'].push(event);
+    else groups['Other events'].push(event);
+  });
+
+  elements.eventsGroups.innerHTML = '';
+  Object.entries(groups).forEach(([title, items]) => {
+    if (items.length === 0) return;
+    const group = document.createElement('div');
+    group.className = 'event-group';
+    const heading = document.createElement('h4');
+    heading.textContent = title;
+    group.appendChild(heading);
+    items.forEach((event) => {
+      const card = document.createElement('div');
+      card.className = 'event-card';
+      card.textContent = event.title;
+      card.addEventListener('click', () => selectEvent(event.id));
+      group.appendChild(card);
+    });
+    elements.eventsGroups.appendChild(group);
+  });
+};
+
+const renderHeadlineEvents = (events) => {
+  elements.headlineEvents.innerHTML = '';
+  events.slice(0, 5).forEach((event) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<strong>${event.title}</strong><div class="muted">Type: ${event.type}</div>`;
+    card.addEventListener('click', () => selectEvent(event.id));
+    elements.headlineEvents.appendChild(card);
+  });
+};
+
+const renderWarsOverview = (year) => {
+  elements.warsOverview.innerHTML = '';
+  const started = state.wars.filter((war) => war.startYear === year);
+  const ended = state.wars.filter((war) => war.endYear === year);
+  const ongoing = state.wars.filter((war) => war.startYear <= year && (!war.endYear || war.endYear > year));
+
+  const section = (label, list) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'item';
+    wrapper.innerHTML = `<strong>${label}</strong>`;
+    list.slice(0, 5).forEach((war) => {
+      const line = document.createElement('div');
+      line.textContent = `${war.name} (${war.startYear}${war.endYear ? `-${war.endYear}` : ''})`;
+      line.addEventListener('click', () => selectWar(war.id));
+      wrapper.appendChild(line);
+    });
+    elements.warsOverview.appendChild(wrapper);
+  };
+
+  section('Started', started);
+  section('Ended', ended);
+  section('Ongoing', ongoing);
+};
+
+const renderAbsorptionLedger = (changes) => {
+  elements.absorptionLedger.innerHTML = '';
+  if (changes.length === 0) {
+    elements.absorptionLedger.innerHTML = '<div class="item">No territorial changes recorded this year.</div>';
+    return;
+  }
+  changes.forEach((change) => {
+    const winner = change.winnerPolityId ? state.politiesById.get(change.winnerPolityId) ?? change.winnerPolityId : 'Unknown';
+    const loser = change.loserPolityId ? state.politiesById.get(change.loserPolityId) ?? change.loserPolityId : 'Unknown';
+    const item = document.createElement('div');
+    item.className = 'item';
+    item.innerHTML = `<strong>${winner}</strong> → ${loser}<div class="muted">${change.type}</div>`;
+    item.addEventListener('click', () => selectChange(change.id));
+    elements.absorptionLedger.appendChild(item);
+  });
+};
+
+const renderTopPowers = (polities) => {
+  elements.topPowers.innerHTML = '';
+  polities.forEach((polity, index) => {
+    const item = document.createElement('div');
+    item.className = 'item';
+    item.innerHTML = `<strong>#${index + 1} ${polity.name}</strong> · Power ${formatNumber(polity.stats.powerScore)}`;
+    item.addEventListener('click', () => selectPolity(polity.id));
+    elements.topPowers.appendChild(item);
+  });
+};
+
+const renderInspectorEvent = (event) => {
+  if (!event) {
+    elements.tabEvent.innerHTML = '<div class="item">Select an event to see details.</div>';
+    return;
+  }
+  const actors = [...event.actors.primary, ...(event.actors.secondary ?? [])]
+    .map((id) => state.politiesById.get(id) ?? id)
+    .join(', ');
+  const causes = event.causes.map((cause) => `${cause.key} (${cause.weight.toFixed(2)})`).join(', ');
+  const effects = event.effects.join(', ');
+  elements.tabEvent.innerHTML = `
+    <div class="item"><strong>${event.title}</strong><div>Year ${event.year}</div></div>
+    <div class="item"><strong>What happened</strong><div>${event.explanation.join(' ')}</div></div>
+    <div class="item"><strong>Who</strong><div>${actors || 'Unknown'}</div></div>
+    <div class="item"><strong>Why</strong><div>${causes || 'Unspecified'}</div></div>
+    <div class="item"><strong>What changed</strong><div>${effects || 'No recorded effects'}</div></div>
+  `;
+};
+
+const renderInspectorPolity = (polity, history) => {
+  if (!polity) {
+    elements.tabPolity.innerHTML = '<div class="item">Select a polity to see details.</div>';
+    return;
+  }
+  const stats = polity.stats;
+  const events = history?.events ?? [];
+  const changes = history?.changes ?? [];
+  elements.tabPolity.innerHTML = `
+    <div class="item"><strong>${polity.name}</strong><div>${polity.type ?? 'Polity'} · Capital ${polity.capitalCityId ?? 'Unknown'}</div></div>
+    <div class="item"><strong>Stats at year ${state.year}</strong>
+      <div>Power ${formatNumber(stats.powerScore)} · Pop ${formatNumber(stats.population)} · GDP ${formatNumber(stats.gdp)}</div>
+      <div>Tech ${formatNumber(stats.techLevel)} · Stability ${formatNumber(stats.stability)} · Military ${formatNumber(stats.military)}</div>
+    </div>
+    <div class="item"><strong>Key history</strong>
+      ${events.slice(0, 10).map((event) => `<div>${event.year} · ${event.title}</div>`).join('') || 'No events'}
+    </div>
+    <div class="item"><strong>Territory changes</strong>
+      ${changes
+        .slice(0, 10)
+        .map((change) => `<div>${change.year} · ${change.gained ? 'Gained' : 'Lost'} · ${change.otherPolityId ?? 'Unknown'}</div>`)
+        .join('') || 'No changes'}
+    </div>
+  `;
+};
+
+const renderInspectorWar = (war) => {
+  if (!war) {
+    elements.tabWar.innerHTML = '<div class="item">Select a war to see details.</div>';
+    return;
+  }
+  const sidesA = war.sides.A.map((id) => state.politiesById.get(id) ?? id).join(', ');
+  const sidesB = war.sides.B.map((id) => state.politiesById.get(id) ?? id).join(', ');
+  const battles = war.battles
+    .map(
+      (battle) =>
+        `<div class="battle" data-cell="${battle.locationCellId}">${battle.year} · ${battle.type} · ${battle.result}</div>`
+    )
+    .join('');
+  elements.tabWar.innerHTML = `
+    <div class="item"><strong>${war.name}</strong><div>${war.startYear} - ${war.endYear ?? 'ongoing'} · ${war.outcome}</div></div>
+    <div class="item"><strong>Sides</strong><div>A: ${sidesA}</div><div>B: ${sidesB}</div></div>
+    <div class="item"><strong>Why it started</strong><div>${war.explanation.join(' ')}</div></div>
+    <div class="item"><strong>Battles</strong>${battles || 'No battles recorded'}</div>
+  `;
+  elements.tabWar.querySelectorAll('.battle').forEach((node) => {
+    node.addEventListener('click', () => {
+      state.highlightCellId = Number(node.dataset.cell);
+      renderMap();
+    });
+  });
+};
+
+const renderInspectorChange = (change) => {
+  if (!change) {
+    elements.tabChange.innerHTML = '<div class="item">Select a change to see details.</div>';
+    return;
+  }
+  const winner = change.winnerPolityId ? state.politiesById.get(change.winnerPolityId) ?? change.winnerPolityId : 'Unknown';
+  const loser = change.loserPolityId ? state.politiesById.get(change.loserPolityId) ?? change.loserPolityId : 'Unknown';
+  elements.tabChange.innerHTML = `
+    <div class="item"><strong>${change.type}</strong><div>Year ${change.year}</div></div>
+    <div class="item"><strong>Who absorbed whom</strong><div>${winner} → ${loser}</div></div>
+    <div class="item"><strong>Reason</strong><div>${change.reason}</div></div>
+    <div class="item"><strong>Linked war/treaty</strong><div>${change.linkedWarId ?? 'None'}</div></div>
+  `;
+};
+
+const renderInspector = async () => {
+  if (state.selectedEventId) {
+    renderTabs('event');
+    renderInspectorEvent(state.selectedEvent);
+    elements.inspectorSubtitle.textContent = 'Event page';
+    return;
+  }
+  if (state.selectedPolityId) {
+    renderTabs('polity');
+    elements.inspectorSubtitle.textContent = 'Polity page';
+    const polity = await fetchJson(`/world/${state.worldId}/polity/${state.selectedPolityId}?year=${state.year}`);
+    const fromYear = Math.max(state.worldMeta.startYear, state.year - 50);
+    const history = await fetchJson(
+      `/world/${state.worldId}/polity/${state.selectedPolityId}/history?from=${fromYear}&to=${state.year}`
+    );
+    renderInspectorPolity(polity, history);
+    return;
+  }
+  if (state.selectedWarId) {
+    renderTabs('war');
+    elements.inspectorSubtitle.textContent = 'War page';
+    const war = await fetchJson(`/world/${state.worldId}/war/${state.selectedWarId}`);
+    renderInspectorWar(war);
+    return;
+  }
+  if (state.selectedChangeId) {
+    renderTabs('change');
+    elements.inspectorSubtitle.textContent = 'Change page';
+    const change = state.selectedChange;
+    renderInspectorChange(change);
+    return;
+  }
+  renderTabs('event');
+  renderInspectorEvent(null);
+  renderInspectorPolity(null);
+  renderInspectorWar(null);
+  renderInspectorChange(null);
+  elements.inspectorSubtitle.textContent = 'Select an item to open its page.';
+};
+
+const loadYearData = async () => {
+  if (!state.worldId || state.year === null) return;
+  const year = state.year;
+  const [events, changes, polities, topPowers] = await Promise.all([
+    fetchJson(`/world/${state.worldId}/timeline?from=${year}&to=${year}`),
+    fetchJson(`/world/${state.worldId}/changes?year=${year}`),
+    fetchJson(`/world/${state.worldId}/polities?year=${year}`),
+    fetchJson(`/world/${state.worldId}/polities?year=${year}&sort=powerScore&limit=5`)
+  ]);
+  state.politiesById = new Map(polities.map((polity) => [polity.id, polity.name]));
+  renderEventsInYear(events);
+  renderHeadlineEvents(events);
+  renderWarsOverview(year);
+  renderAbsorptionLedger(changes);
+  renderTopPowers(topPowers);
+};
+
+const loadSummary = async () => {
+  if (!state.worldMeta || !state.worldId) return;
+  const { startYear, endYear } = state.worldMeta;
+  const response = await fetchJson(`/world/${state.worldId}/years/summary?from=${startYear}&to=${endYear}`);
+  const years = response.years ?? response;
+  state.summaryByYear = new Map(years.map((item) => [item.year, item]));
+  renderHeatmap();
 };
 
 const renderMap = async () => {
-  if (!state.world) return;
-  const renderKey = `${state.worldId}:${state.layer}:${state.year}:${state.overlayMode}:${state.selectedPolityId}:${state.selectedChangeId}`;
-  if (state.lastRenderKey === renderKey) return;
-  state.lastRenderKey = renderKey;
-
-  const width = state.world.planet.mapWidth;
-  const height = state.world.planet.mapHeight;
-  const image = ctx.createImageData(width, height);
-  const data = image.data;
-
-  const layer = state.layer;
-  let layerData = null;
-  if (layer === 'political') {
-    layerData = await getOwnerMap();
+  if (!state.worldId || !state.planet || state.year === null) return;
+  const { mapWidth, mapHeight } = state.planet;
+  elements.canvas.width = mapWidth;
+  elements.canvas.height = mapHeight;
+  const key = mapKey(state.layer, state.year);
+  let data = state.mapCache.get(key);
+  if (!data) {
+    data = await fetchJson(`/world/${state.worldId}/map?layer=${state.layer}&year=${state.year}`);
+    state.mapCache.set(key, data);
+  }
+  const image = ctx.createImageData(mapWidth, mapHeight);
+  if (state.layer === 'political') {
+    const owners = decodePoliticalOwners(data, mapWidth * mapHeight);
+    state.ownerCache.set(state.year, owners);
+    owners.forEach((owner, idx) => {
+      const [r, g, b] = owner ? colorFromId(owner) : [30, 30, 30];
+      const offset = idx * 4;
+      image.data[offset] = r;
+      image.data[offset + 1] = g;
+      image.data[offset + 2] = b;
+      image.data[offset + 3] = 255;
+    });
+  } else if (state.layer === 'elevation') {
+    const values = data;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    values.forEach((value, idx) => {
+      const normalized = (value - min) / (max - min || 1);
+      const shade = Math.floor(30 + normalized * 225);
+      const offset = idx * 4;
+      image.data[offset] = shade;
+      image.data[offset + 1] = shade;
+      image.data[offset + 2] = shade;
+      image.data[offset + 3] = 255;
+    });
+  } else if (state.layer === 'resources') {
+    data.forEach((tags, idx) => {
+      const tag = tags && tags.length ? tags[0] : 'none';
+      const [r, g, b] = colorFromId(tag, 0.45, 0.5);
+      const offset = idx * 4;
+      image.data[offset] = r;
+      image.data[offset + 1] = g;
+      image.data[offset + 2] = b;
+      image.data[offset + 3] = 255;
+    });
   } else {
-    layerData = await getLayerData(layer);
-  }
-  const owners = layer === 'political' ? layerData : await getOwnerMap();
-
-  let elevMin = 0;
-  let elevMax = 1;
-  if (layer === 'elevation') {
-    elevMin = Infinity;
-    elevMax = -Infinity;
-    for (const value of layerData) {
-      if (value < elevMin) elevMin = value;
-      if (value > elevMax) elevMax = value;
-    }
-  }
-
-  state.world.cells.forEach((cell, idx) => {
-    const baseIndex = (cell.y * width + cell.x) * 4;
-    let color = [30, 30, 30];
-    if (layer === 'political') {
-      if (cell.isOcean) {
-        color = [20, 60, 120];
-      } else {
-        const owner = layerData[idx];
-        color = owner ? polityColor(owner) : [90, 90, 90];
-      }
-    } else if (layer === 'biome') {
-      color = biomeColor(layerData[idx]);
-    } else if (layer === 'elevation') {
-      const normalized = (layerData[idx] - elevMin) / (elevMax - elevMin || 1);
-      const shade = Math.round(normalized * 255);
-      color = [shade, shade, shade];
-    } else if (layer === 'resources') {
-      color = cell.isOcean ? [20, 60, 120] : [50, 55, 65];
-    }
-
-    data[baseIndex] = color[0];
-    data[baseIndex + 1] = color[1];
-    data[baseIndex + 2] = color[2];
-    data[baseIndex + 3] = 255;
-  });
-
-  ctx.putImageData(image, 0, 0);
-
-  if (layer === 'resources') {
-    ctx.fillStyle = 'rgba(0, 255, 153, 0.8)';
-    state.world.cells.forEach((cell) => {
-      const tags = cell.resourceTags;
-      if (tags && tags.length > 0) {
-        ctx.fillRect(cell.x, cell.y, 1, 1);
-      }
+    data.forEach((biome, idx) => {
+      const [r, g, b] = colorFromId(String(biome), 0.45, 0.5);
+      const offset = idx * 4;
+      image.data[offset] = r;
+      image.data[offset + 1] = g;
+      image.data[offset + 2] = b;
+      image.data[offset + 3] = 255;
     });
   }
 
-  if (state.overlayMode === 'polity' && state.selectedPolityId) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    for (let idx = 0; idx < owners.length; idx += 1) {
-      if (owners[idx] !== state.selectedPolityId) continue;
-      const cell = state.world.cells[idx];
-      const neighbors = [
-        idx - 1,
-        idx + 1,
-        idx - width,
-        idx + width
-      ];
-      const border = neighbors.some((n) => n < 0 || n >= owners.length || owners[n] !== state.selectedPolityId);
-      if (border) {
-        ctx.fillRect(cell.x, cell.y, 1, 1);
+  if (state.selectedChange?.regionsTransferredCompressed) {
+    for (const range of state.selectedChange.regionsTransferredCompressed) {
+      for (let idx = range.start; idx <= range.end; idx += 1) {
+        const offset = idx * 4;
+        image.data[offset] = 255;
+        image.data[offset + 1] = 120;
+        image.data[offset + 2] = 120;
+        image.data[offset + 3] = 255;
       }
-    }
-  }
-
-  if (state.overlayMode === 'change' && state.selectedChangeId) {
-    const change = state.world.territorialChanges.find((c) => c.id === state.selectedChangeId);
-    if (change) {
-      ctx.fillStyle = 'rgba(94, 228, 199, 0.9)';
-      change.regionsTransferredCompressed.forEach((range) => {
-        for (let idx = range.start; idx <= range.end; idx += 1) {
-          const cell = state.world.cells[idx];
-          if (cell) ctx.fillRect(cell.x, cell.y, 1, 1);
-        }
-      });
     }
   }
 
   if (state.highlightCellId !== null) {
-    const cell = state.world.cells[state.highlightCellId];
-    if (cell) {
-      ctx.strokeStyle = '#ff6b6b';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cell.x - 1, cell.y - 1, 3, 3);
-    }
+    const offset = state.highlightCellId * 4;
+    image.data[offset] = 255;
+    image.data[offset + 1] = 255;
+    image.data[offset + 2] = 255;
+    image.data[offset + 3] = 255;
   }
+
+  ctx.putImageData(image, 0, 0);
+  elements.mapNotes.textContent = `Layer ${state.layer} · Year ${state.year}`;
 };
 
-const renderWorldMeta = (worldId) => {
-  const entry = state.worlds.find((w) => w.worldId === worldId);
-  if (!entry) return;
-  elements.worldMeta.textContent = `Seed ${entry.meta.seed} · Years ${entry.meta.startYear}-${entry.meta.endYear} · Hash ${entry.meta.configHash}`;
-};
-
-const loadWorlds = async () => {
-  const data = await fetchJson('/worlds');
-  state.worlds = data;
-  elements.worldSelect.innerHTML = '';
-  if (data.length === 0) {
-    elements.emptyWorld.hidden = false;
-    elements.worldSelect.innerHTML = '<option value="">No worlds loaded</option>';
-    elements.worldMeta.textContent = 'Generate a world to begin.';
-    return;
-  }
-  elements.emptyWorld.hidden = true;
-  data.forEach((world) => {
-    const option = document.createElement('option');
-    option.value = world.worldId;
-    option.textContent = `${world.worldId.slice(0, 8)} · ${world.meta.startYear} → ${world.meta.endYear}`;
-    elements.worldSelect.appendChild(option);
-  });
-  if (!state.worldId || !data.find((w) => w.worldId === state.worldId)) {
-    state.worldId = data[0].worldId;
-  }
-  elements.worldSelect.value = state.worldId;
-};
-
-const loadWorld = async (worldId) => {
-  if (!worldId) return;
-  const world = await fetchJson(`/world/${worldId}/export`);
-  state.world = world;
-  state.worldId = worldId;
-  state.mapCache = new LRUCache(200);
-  state.ownerCache = new Map();
-  state.mapIndexByCoord = buildCoordIndex(world);
-  state.year = world.meta.startYear;
-  state.highlightCellId = null;
-  state.selectedPolityId = null;
-  state.selectedWarId = null;
-  state.selectedChangeId = null;
-  state.selectedEventId = null;
-  elements.yearSlider.min = String(world.meta.startYear);
-  elements.yearSlider.max = String(world.meta.endYear);
-  elements.yearSlider.value = String(state.year);
-  elements.yearInput.value = String(state.year);
-  elements.yearValue.textContent = String(state.year);
-  elements.canvas.width = world.planet.mapWidth;
-  elements.canvas.height = world.planet.mapHeight;
-  elements.mapNotes.textContent = `Map: ${world.planet.mapWidth} × ${world.planet.mapHeight} cells.`;
-  renderWorldMeta(worldId);
-  populatePolityIndex();
-  populateLedgerFilters();
-  populateTopPowers();
-  await refreshHeatmap();
-  await refreshYear();
-};
-
-const populatePolityIndex = () => {
-  if (!state.world) return;
-  state.polityById = new Map(state.world.politiesInitial.map((p) => [p.id, p]));
-};
-
-const populateLedgerFilters = () => {
-  if (!state.world) return;
-  elements.ledgerPolity.innerHTML = '<option value="">All</option>';
-  state.world.politiesInitial.forEach((polity) => {
-    const option = document.createElement('option');
-    option.value = polity.id;
-    option.textContent = polity.name;
-    elements.ledgerPolity.appendChild(option);
-  });
-  const types = Array.from(new Set(state.world.territorialChanges.map((change) => change.type)));
-  elements.ledgerType.innerHTML = '<option value="">All</option>';
-  types.forEach((type) => {
-    const option = document.createElement('option');
-    option.value = type;
-    option.textContent = type;
-    elements.ledgerType.appendChild(option);
-  });
-  elements.ledgerFrom.value = String(state.world.meta.startYear);
-  elements.ledgerTo.value = String(state.world.meta.endYear);
-};
-
-const populateTopPowers = () => {
-  if (!state.world) return;
-  elements.topPowersDecade.innerHTML = '';
-  state.world.meta.summary.topPowersByDecade.forEach((entry) => {
-    const option = document.createElement('option');
-    option.value = String(entry.decade);
-    option.textContent = `${entry.decade}s`;
-    elements.topPowersDecade.appendChild(option);
-  });
-  elements.topPowersDecade.onchange = () => renderTopPowers();
-  renderTopPowers();
-};
-
-const renderTopPowers = () => {
-  const decade = Number(elements.topPowersDecade.value);
-  const entry = state.world.meta.summary.topPowersByDecade.find((item) => item.decade === decade);
-  if (!entry) return;
-  elements.topPowersList.innerHTML = '';
-  entry.top.forEach((item, index) => {
-    const name = state.polityById.get(item.id)?.name ?? item.id;
-    const row = document.createElement('div');
-    row.className = 'list-item';
-    row.textContent = `${index + 1}. ${name} · Power ${formatNumber(item.powerScore)}`;
-    elements.topPowersList.appendChild(row);
-  });
-};
-
-const refreshHeatmap = async () => {
-  if (!state.world) return;
-  const data = await fetchJson(`/world/${state.worldId}/years/summary?from=${state.world.meta.startYear}&to=${state.world.meta.endYear}`);
-  elements.timelineHeatmap.innerHTML = '';
-  data.forEach((entry) => {
-    const total = Object.values(entry.counts).reduce((sum, value) => sum + value, 0);
-    const intensity = Math.min(1, total / 5);
-    const item = document.createElement('div');
-    item.className = 'heat-item';
-    item.style.background = `rgba(94, 228, 199, ${0.2 + intensity * 0.8})`;
-    item.title = `${entry.year}: ${total} events`;
-    item.addEventListener('click', () => setYear(entry.year));
-    elements.timelineHeatmap.appendChild(item);
-  });
-};
-
-const eventGroupMap = [
-  { label: 'Wars & Battles', types: ['WAR_DECLARED', 'WAR_ENDED', 'BATTLE'] },
-  { label: 'Treaties & Alliances', types: ['TREATY_SIGNED', 'ALLIANCE_FORMED'] },
-  { label: 'Annexations / Absorptions', types: ['ANNEXATION', 'ABSORPTION', 'ANNEXATION_PARTIAL', 'ABSORBED_FULL', 'VASSALIZED', 'UNION', 'SECESSION'] },
-  { label: 'Internal crises', types: ['REVOLT', 'SECESSION', 'CRISIS'] },
-  { label: 'Economy / Tech', types: ['ECONOMY', 'TECH'] }
-];
-
-const renderEventsForYear = (events) => {
-  elements.eventsGroups.innerHTML = '';
-  const grouped = new Map(eventGroupMap.map((group) => [group.label, []]));
-  const other = [];
-  events.forEach((event) => {
-    const group = eventGroupMap.find((g) => g.types.includes(event.type));
-    if (group) grouped.get(group.label).push(event);
-    else other.push(event);
-  });
-  if (other.length) grouped.set('Other', other);
-
-  grouped.forEach((items, label) => {
-    const groupEl = document.createElement('div');
-    groupEl.className = 'event-group';
-    groupEl.innerHTML = `<h4>${label}</h4>`;
-    if (items.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'event-item';
-      empty.textContent = 'No events.';
-      groupEl.appendChild(empty);
-    } else {
-      items.forEach((event) => {
-        const item = document.createElement('div');
-        item.className = 'event-item';
-        item.innerHTML = `<strong>${event.year}</strong> · ${event.title}`;
-        item.addEventListener('click', () => selectEvent(event));
-        groupEl.appendChild(item);
-      });
-    }
-    elements.eventsGroups.appendChild(groupEl);
-  });
-};
-
-const selectEvent = (event) => {
-  state.selectedEventId = event.id;
-  renderStoryCard(event);
-  if (event.refs?.warId) {
-    state.selectedWarId = event.refs.warId;
-    refreshWarInspector();
-  }
-  if (event.refs?.changeId) {
-    state.selectedChangeId = event.refs.changeId;
-    refreshChangeInspector();
-  }
-};
-
-const renderStoryCard = (event) => {
-  if (!event) {
-    elements.storyCard.textContent = 'Select an event to see its story.';
-    return;
-  }
-  const actors = [...event.actors.primary, ...(event.actors.secondary ?? [])]
-    .map((id) => state.polityById.get(id)?.name ?? id)
-    .join(', ');
-  const causes = event.causes.map((cause) => `${cause.key} (${(cause.weight * 100).toFixed(0)}%)`).join(', ') || 'None';
-  const effects = event.effects.join(', ') || 'None';
-  const links = [];
-  if (event.refs?.warId) links.push(`<span class="pill" data-war="${event.refs.warId}">War ${event.refs.warId}</span>`);
-  if (event.refs?.treatyId) links.push(`<span class="pill" data-treaty="${event.refs.treatyId}">Treaty ${event.refs.treatyId}</span>`);
-  if (event.refs?.changeId) links.push(`<span class="pill" data-change="${event.refs.changeId}">Change ${event.refs.changeId}</span>`);
-  elements.storyCard.innerHTML = `
-    <h3>${event.title}</h3>
-    <div>${event.explanation.slice(0, 3).join(' ')}</div>
-    <div><strong>Who:</strong> ${actors || 'Unknown'}</div>
-    <div><strong>Why:</strong> ${causes}</div>
-    <div><strong>What changed:</strong> ${effects}</div>
-    <div class="links">${links.join(' ')}</div>
-  `;
-  elements.storyCard.querySelectorAll('[data-war]').forEach((node) => {
-    node.addEventListener('click', () => {
-      state.selectedWarId = node.getAttribute('data-war');
-      activateTab('war');
-      refreshWarInspector();
-    });
-  });
-  elements.storyCard.querySelectorAll('[data-change]').forEach((node) => {
-    node.addEventListener('click', () => {
-      state.selectedChangeId = node.getAttribute('data-change');
-      activateTab('change');
-      refreshChangeInspector();
-      state.overlayMode = 'change';
-      renderMap();
-    });
-  });
-};
-
-const sparkline = (values, width = 120, height = 30) => {
-  if (!values.length) return '';
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const points = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * width;
-      const y = height - ((value - min) / (max - min || 1)) * height;
-      return `${x},${y}`;
-    })
-    .join(' ');
-  return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
-    <polyline fill="none" stroke="#5ee4c7" stroke-width="2" points="${points}" />
-  </svg>`;
-};
-
-const refreshPolityInspector = async () => {
-  if (!state.selectedPolityId) {
-    elements.tabPolity.innerHTML = '<p class="hint">Select a polity on the map to inspect.</p>';
-    return;
-  }
-  const from = Math.max(state.world.meta.startYear, state.year - 50);
-  const history = await fetchJson(`/world/${state.worldId}/polity/${state.selectedPolityId}/history?from=${from}&to=${state.year}`);
-  const latest = history.statsSeries[history.statsSeries.length - 1];
-  if (!latest) return;
-  const stats = latest.stats;
-  const series = history.statsSeries;
-  const values = (key) => series.map((point) => point.stats[key]);
-  const eventList = history.events
-    .map((event) => ({
-      event,
-      score: event.causes.length + event.effects.length + event.explanation.length
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
-    .map((item) => `<div class="list-item">${item.event.year} · ${item.event.title}</div>`)
-    .join('');
-  const changeList = history.changes
-    .map((change) => {
-      const winner = state.polityById.get(change.winnerPolityId)?.name ?? change.winnerPolityId ?? '-';
-      const loser = state.polityById.get(change.loserPolityId)?.name ?? change.loserPolityId ?? '-';
-      return `<div class="list-item">${change.year} · ${change.type} · ${winner} → ${loser}</div>`;
-    })
-    .join('');
-
-  elements.tabPolity.innerHTML = `
-    <div><strong>${state.polityById.get(state.selectedPolityId)?.name ?? state.selectedPolityId}</strong></div>
-    <div class="stat-grid">
-      <div class="stat-card"><div class="label">Power</div><div class="value">${formatNumber(stats.powerScore)}</div>${sparkline(values('powerScore'))}</div>
-      <div class="stat-card"><div class="label">Population</div><div class="value">${formatNumber(stats.population)}</div>${sparkline(values('population'))}</div>
-      <div class="stat-card"><div class="label">GDP</div><div class="value">${formatNumber(stats.gdp)}</div>${sparkline(values('gdp'))}</div>
-      <div class="stat-card"><div class="label">Tech</div><div class="value">${formatNumber(stats.techLevel)}</div>${sparkline(values('techLevel'))}</div>
-      <div class="stat-card"><div class="label">Stability</div><div class="value">${formatNumber(stats.stability)}</div>${sparkline(values('stability'))}</div>
-      <div class="stat-card"><div class="label">Military</div><div class="value">${formatNumber(stats.military)}</div>${sparkline(values('military'))}</div>
-    </div>
-    <h4>Key history</h4>
-    <div class="list">${eventList || '<div class="list-item">No events.</div>'}</div>
-    <h4>Territory changes</h4>
-    <div class="list">${changeList || '<div class="list-item">No changes.</div>'}</div>
-  `;
-};
-
-const refreshWarInspector = async () => {
-  if (!state.selectedWarId) {
-    elements.tabWar.innerHTML = '<p class="hint">Select a war to inspect.</p>';
-    return;
-  }
-  const war = await fetchJson(`/world/${state.worldId}/war/${state.selectedWarId}`);
-  const getName = (id) => state.polityById.get(id)?.name ?? id;
-  const battles = war.battles
-    .map(
-      (battle) => `
-        <div class="list-item" data-cell="${battle.locationCellId}">
-          ${battle.year} · ${battle.type} · ${battle.result}
-          <div class="hint">Cell ${battle.locationCellId} · Casualties A ${battle.casualtiesEstimate.A} / B ${battle.casualtiesEstimate.B}</div>
-        </div>`
-    )
-    .join('');
-  const causeChain = state.world.events
-    .filter((event) => event.refs?.warId === war.id)
-    .map((event) => `<div class="list-item">${event.year} · ${event.title}</div>`)
-    .join('');
-  elements.tabWar.innerHTML = `
-    <div><strong>${war.name}</strong> (${war.startYear}-${war.endYear ?? 'ongoing'})</div>
-    <div>Sides: A [${war.sides.A.map(getName).join(', ')}] vs B [${war.sides.B.map(getName).join(', ')}]</div>
-    <div>Outcome: ${war.outcome}</div>
-    <div>Treaty: ${war.treatyId ?? 'None'}</div>
-    <h4>Battles</h4>
-    <div class="list">${battles || '<div class="list-item">No battles recorded.</div>'}</div>
-    <h4>Cause chain</h4>
-    <div class="list">${causeChain || '<div class="list-item">No cause chain recorded.</div>'}</div>
-  `;
-  elements.tabWar.querySelectorAll('[data-cell]').forEach((node) => {
-    node.addEventListener('click', () => {
-      const cellId = Number(node.getAttribute('data-cell'));
-      if (Number.isFinite(cellId)) {
-        state.highlightCellId = cellId;
-        renderMap();
-      }
-    });
-  });
-};
-
-const refreshChangeInspector = () => {
-  if (!state.selectedChangeId) {
-    elements.tabChange.innerHTML = '<p class="hint">Select a territorial change to inspect.</p>';
-    return;
-  }
-  const change = state.world.territorialChanges.find((c) => c.id === state.selectedChangeId);
-  if (!change) return;
-  const winner = state.polityById.get(change.winnerPolityId)?.name ?? change.winnerPolityId ?? '-';
-  const loser = state.polityById.get(change.loserPolityId)?.name ?? change.loserPolityId ?? '-';
-  elements.tabChange.innerHTML = `
-    <div><strong>${change.type}</strong> (${change.year})</div>
-    <div>Winner: ${winner}</div>
-    <div>Loser: ${loser}</div>
-    <div>Reason: ${change.reason}</div>
-    <div>Linked war: ${change.linkedWarId ?? 'None'}</div>
-    <div>Treaty: ${change.treatyId ?? 'None'}</div>
-    <div>Cells transferred: ${change.regionsTransferredCompressed.length}</div>
-  `;
-};
-
-const refreshEvents = async () => {
-  if (!state.world) return;
-  const events = await fetchJson(`/world/${state.worldId}/timeline?from=${state.year}&to=${state.year}`);
-  renderEventsForYear(events);
-};
-
-const refreshLedger = async () => {
-  if (!state.world) return;
-  const from = Number(elements.ledgerFrom.value) || state.world.meta.startYear;
-  const to = Number(elements.ledgerTo.value) || state.world.meta.endYear;
-  const type = elements.ledgerType.value;
-  const data = await fetchJson(`/world/${state.worldId}/changes?from=${from}&to=${to}${type ? `&type=${type}` : ''}`);
-  const polityFilter = elements.ledgerPolity.value;
-  const filtered = polityFilter
-    ? data.filter((change) => change.winnerPolityId === polityFilter || change.loserPolityId === polityFilter)
-    : data;
-  elements.ledgerTable.innerHTML = '';
-  filtered.forEach((change) => {
-    const row = document.createElement('div');
-    row.className = 'ledger-row';
-    const winner = state.polityById.get(change.winnerPolityId)?.name ?? change.winnerPolityId ?? '-';
-    const loser = state.polityById.get(change.loserPolityId)?.name ?? change.loserPolityId ?? '-';
-    row.innerHTML = `
-      <div>${change.year}</div>
-      <div>${winner}</div>
-      <div>${loser}</div>
-      <div>${change.type}</div>
-      <div>${change.linkedWarId ?? change.treatyId ?? '—'}</div>
-    `;
-    row.addEventListener('click', () => {
-      state.selectedChangeId = change.id;
-      activateTab('change');
-      refreshChangeInspector();
-      state.overlayMode = 'change';
-      renderMap();
-    });
-    elements.ledgerTable.appendChild(row);
-  });
-};
-
-const refreshYear = async () => {
-  elements.yearValue.textContent = String(state.year);
-  elements.yearInput.value = String(state.year);
-  await refreshEvents();
-  await refreshPolityInspector();
-  await renderMap();
-};
-
-let sliderTimeout = null;
-
-const setYear = (year) => {
-  if (!state.world) return;
-  const clamped = Math.min(state.world.meta.endYear, Math.max(state.world.meta.startYear, year));
-  state.year = clamped;
-  elements.yearSlider.value = String(clamped);
-  elements.yearInput.value = String(clamped);
-  if (sliderTimeout) clearTimeout(sliderTimeout);
-  sliderTimeout = setTimeout(() => {
-    refreshYear();
-  }, 100);
-};
-
-const handleCanvasMove = async (event) => {
-  if (!state.world) return;
+const updateTooltip = (event) => {
+  if (!state.planet || !state.worldId || !state.cells) return;
   const rect = elements.canvas.getBoundingClientRect();
-  const scaleX = state.world.planet.mapWidth / rect.width;
-  const scaleY = state.world.planet.mapHeight / rect.height;
-  const x = Math.floor((event.clientX - rect.left) * scaleX);
-  const y = Math.floor((event.clientY - rect.top) * scaleY);
-  if (x < 0 || y < 0 || x >= state.world.planet.mapWidth || y >= state.world.planet.mapHeight) {
+  const x = Math.floor(((event.clientX - rect.left) / rect.width) * state.planet.mapWidth);
+  const y = Math.floor(((event.clientY - rect.top) / rect.height) * state.planet.mapHeight);
+  if (x < 0 || y < 0 || x >= state.planet.mapWidth || y >= state.planet.mapHeight) {
     elements.tooltip.hidden = true;
     return;
   }
-  const index = state.mapIndexByCoord[y * state.world.planet.mapWidth + x];
-  if (index === -1) return;
-  const cell = state.world.cells[index];
-  const owners = await getOwnerMap();
-  const ownerId = owners[index];
-  const ownerName = ownerId ? state.polityById.get(ownerId)?.name ?? ownerId : 'Unclaimed';
-  elements.tooltip.hidden = false;
-  elements.tooltip.style.left = `${event.clientX - rect.left + 10}px`;
-  elements.tooltip.style.top = `${event.clientY - rect.top + 10}px`;
+  const idx = y * state.planet.mapWidth + x;
+  const cell = state.cells[idx];
+  if (!cell) return;
+  const owner = state.ownerCache.get(state.year)?.[idx];
+  const { lat, lon } = cellLatLon(x, y, state.planet.mapWidth, state.planet.mapHeight);
   elements.tooltip.innerHTML = `
-    <strong>Cell ${cell.x},${cell.y}</strong><br/>
-    Lat/Lon: ${cell.lat.toFixed(2)}, ${cell.lon.toFixed(2)}<br/>
-    Biome: ${cell.biomeId}<br/>
-    Elevation: ${cell.elevation.toFixed(2)}<br/>
-    Ocean: ${cell.isOcean ? 'Yes' : 'No'}<br/>
-    Owner: ${ownerName}
+    <div><strong>Cell ${x}, ${y}</strong></div>
+    <div>Lat ${lat.toFixed(2)} · Lon ${lon.toFixed(2)}</div>
+    <div>Biome ${cell.biomeId} · Elev ${cell.elevation.toFixed(2)}</div>
+    <div>Ocean ${cell.isOcean ? 'Yes' : 'No'}</div>
+    <div>Owner ${owner ? state.politiesById.get(owner) ?? owner : 'None'}</div>
   `;
+  elements.tooltip.style.left = `${event.clientX - rect.left + 12}px`;
+  elements.tooltip.style.top = `${event.clientY - rect.top + 12}px`;
+  elements.tooltip.hidden = false;
 };
 
-const handleCanvasLeave = () => {
-  elements.tooltip.hidden = true;
-};
-
-const handleCanvasClick = async (event) => {
-  if (!state.world) return;
+const handleMapClick = (event) => {
+  if (!state.planet) return;
   const rect = elements.canvas.getBoundingClientRect();
-  const scaleX = state.world.planet.mapWidth / rect.width;
-  const scaleY = state.world.planet.mapHeight / rect.height;
-  const x = Math.floor((event.clientX - rect.left) * scaleX);
-  const y = Math.floor((event.clientY - rect.top) * scaleY);
-  const index = state.mapIndexByCoord[y * state.world.planet.mapWidth + x];
-  if (index === -1) return;
-  const owners = await getOwnerMap();
-  const ownerId = owners[index];
-  if (!ownerId) return;
-  state.selectedPolityId = ownerId;
-  activateTab('polity');
-  refreshPolityInspector();
-};
-
-const activateTab = (tabId) => {
-  elements.tabButtons.forEach((button) => {
-    button.classList.toggle('active', button.dataset.tab === tabId);
-  });
-  document.querySelectorAll('.tab-content').forEach((tab) => {
-    tab.classList.toggle('active', tab.id === `tab-${tabId}`);
-  });
-};
-
-const renderSearchResults = (results) => {
-  elements.searchResults.innerHTML = '';
-  state.searchActiveIndex = 0;
-  if (results.length === 0) {
-    elements.searchResults.hidden = true;
-    return;
-  }
-  const groups = results.reduce((acc, result) => {
-    const key = result.kind;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(result);
-    return acc;
-  }, {});
-
-  Object.entries(groups).forEach(([kind, items]) => {
-    const title = document.createElement('div');
-    title.className = 'group-title';
-    title.textContent = kind.toUpperCase();
-    elements.searchResults.appendChild(title);
-    items.forEach((result, index) => {
-      const item = document.createElement('div');
-      item.className = 'result-item';
-      if (index === 0) item.classList.add('active');
-      item.textContent = `${result.title}${result.year ? ` · ${result.year}` : ''}`;
-      item.addEventListener('click', () => openSearchResult(result));
-      elements.searchResults.appendChild(item);
-    });
-  });
-  elements.searchResults.hidden = false;
-};
-
-const openSearchResult = (result) => {
-  elements.searchResults.hidden = true;
-  if (result.kind === 'polity') {
-    state.selectedPolityId = result.id;
-    activateTab('polity');
-    refreshPolityInspector();
-  } else if (result.kind === 'war') {
-    state.selectedWarId = result.id;
-    activateTab('war');
-    refreshWarInspector();
-  } else if (result.kind === 'change') {
-    state.selectedChangeId = result.id;
-    activateTab('change');
-    refreshChangeInspector();
-    state.overlayMode = 'change';
-    renderMap();
-  } else if (result.kind === 'event') {
-    const event = state.world.events.find((e) => e.id === result.id);
-    if (event) selectEvent(event);
+  const x = Math.floor(((event.clientX - rect.left) / rect.width) * state.planet.mapWidth);
+  const y = Math.floor(((event.clientY - rect.top) / rect.height) * state.planet.mapHeight);
+  const idx = y * state.planet.mapWidth + x;
+  const owner = state.ownerCache.get(state.year)?.[idx];
+  if (owner) {
+    selectPolity(owner);
   }
 };
 
-const runSearch = debounce(async () => {
-  const query = elements.searchInput.value.trim();
-  if (!query) {
-    elements.searchResults.hidden = true;
-    return;
+const setYear = (year) => {
+  if (!state.worldMeta) return;
+  const clamped = Math.min(state.worldMeta.endYear, Math.max(state.worldMeta.startYear, year));
+  state.year = clamped;
+  elements.yearInput.value = clamped;
+  elements.yearSlider.value = clamped;
+  elements.yearValue.textContent = clamped;
+  elements.yearTitle.textContent = `Year ${clamped}`;
+  updateHash('replace');
+};
+
+const syncFromHash = async () => {
+  const hash = parseHash();
+  if (hash.layer) state.layer = hash.layer;
+  if (hash.world && hash.world !== state.worldId) {
+    state.worldId = hash.world;
+    await loadWorld();
   }
   if (!state.worldId) return;
-  try {
-    const results = await fetchJson(`/world/${state.worldId}/events/search?q=${encodeURIComponent(query)}&limit=40`);
-    renderSearchResults(results);
-  } catch (error) {
-    console.error(error);
+  if (hash.year !== null && hash.year !== state.year) {
+    setYear(hash.year);
   }
-}, 200);
-
-const init = async () => {
-  elements.generateConfig.value = defaultConfig;
-
-  elements.refreshWorlds.addEventListener('click', async () => {
-    await loadWorlds();
-    if (state.worldId) await loadWorld(state.worldId);
-  });
-
-  elements.worldSelect.addEventListener('change', async (event) => {
-    const target = event.target;
-    if (!target.value) return;
-    await loadWorld(target.value);
-  });
-
-  elements.generateWorld.addEventListener('click', async () => {
-    const raw = elements.generateConfig.value;
-    let config;
-    try {
-      config = JSON.parse(raw);
-    } catch (error) {
-      alert('Invalid JSON configuration');
-      return;
-    }
-    elements.generateWorld.disabled = true;
-    try {
-      const response = await fetchJson('/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
-      await sleep(100);
-      await loadWorlds();
-      state.worldId = response.worldId;
-      elements.worldSelect.value = response.worldId;
-      await loadWorld(response.worldId);
-    } catch (error) {
-      alert(`Failed to generate: ${error.message}`);
-    } finally {
-      elements.generateWorld.disabled = false;
-    }
-  });
-
-  elements.yearSlider.addEventListener('input', (event) => {
-    setYear(Number(event.target.value));
-  });
-
-  elements.yearInput.addEventListener('change', (event) => {
-    setYear(Number(event.target.value));
-  });
-
-  document.querySelectorAll('[data-step]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const step = Number(button.getAttribute('data-step'));
-      setYear(state.year + step);
-    });
-  });
-
-  elements.layerSelect.addEventListener('change', async (event) => {
-    state.layer = event.target.value;
-    state.lastRenderKey = null;
-    await renderMap();
-  });
-
-  elements.focusPolity.addEventListener('click', () => {
-    state.overlayMode = state.overlayMode === 'polity' ? null : 'polity';
-    renderMap();
-  });
-
-  elements.showChange.addEventListener('click', () => {
-    state.overlayMode = state.overlayMode === 'change' ? null : 'change';
-    renderMap();
-  });
-
-  elements.canvas.addEventListener('mousemove', handleCanvasMove);
-  elements.canvas.addEventListener('mouseleave', handleCanvasLeave);
-  elements.canvas.addEventListener('click', handleCanvasClick);
-
-  elements.ledgerRefresh.addEventListener('click', refreshLedger);
-
-  elements.searchInput.addEventListener('input', runSearch);
-  elements.searchInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      const first = elements.searchResults.querySelector('.result-item');
-      if (first) first.click();
-    }
-    if (event.key === 'Escape') {
-      elements.searchResults.hidden = true;
-    }
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.key === '/') {
-      event.preventDefault();
-      elements.searchInput.focus();
-    }
-    if (event.key === 'Escape') {
-      elements.searchResults.hidden = true;
-    }
-  });
-
-  elements.tabButtons.forEach((button) => {
-    button.addEventListener('click', () => activateTab(button.dataset.tab));
-  });
-
-  await loadWorlds();
-  if (state.worldId) await loadWorld(state.worldId);
-  refreshLedger();
+  state.selectedPolityId = hash.polity;
+  state.selectedWarId = hash.war;
+  state.selectedEventId = hash.event;
+  state.selectedChangeId = hash.change;
+  await refreshSelections();
 };
 
-init().catch((error) => {
-  console.error(error);
+const refreshSelections = async () => {
+  if (!state.worldId || state.year === null) return;
+  state.selectedEvent = null;
+  state.selectedChange = null;
+  if (state.selectedEventId) {
+    const events = await fetchJson(`/world/${state.worldId}/timeline?from=${state.year}&to=${state.year}`);
+    state.selectedEvent = events.find((event) => event.id === state.selectedEventId) ?? null;
+    if (!state.selectedEvent) {
+      const summary = state.summaryByYear.get(state.year);
+      if (summary?.headlines?.some((item) => item.id === state.selectedEventId)) {
+        state.selectedEvent = events[0] ?? null;
+      }
+    }
+  }
+  if (state.selectedChangeId) {
+    const changes = await fetchJson(`/world/${state.worldId}/changes?year=${state.year}`);
+    state.selectedChange = changes.find((change) => change.id === state.selectedChangeId) ?? null;
+  }
+  if (state.selectedEvent?.refs?.changeId) {
+    const change = await fetchJson(`/world/${state.worldId}/changes?year=${state.selectedEvent.year}`);
+    state.selectedChange = change.find((item) => item.id === state.selectedEvent.refs.changeId) ?? null;
+  }
+  await renderInspector();
+  await renderMap();
+};
+
+const loadWorld = async () => {
+  if (!state.worldId) return;
+  const [meta, planet, wars, cells] = await Promise.all([
+    fetchJson(`/world/${state.worldId}/meta`),
+    fetchJson(`/world/${state.worldId}/planet`),
+    fetchJson(`/world/${state.worldId}/wars`),
+    fetchJson(`/world/${state.worldId}/cells`)
+  ]);
+  state.worldMeta = meta;
+  state.planet = planet;
+  state.wars = wars;
+  state.cells = cells;
+  renderWorldMeta();
+  if (state.year === null) {
+    state.year = state.worldMeta.startYear;
+  }
+  elements.yearSlider.min = state.worldMeta.startYear;
+  elements.yearSlider.max = state.worldMeta.endYear;
+  setYear(state.year);
+  elements.layerSelect.value = state.layer;
+  await loadSummary();
+  await loadYearData();
+  await renderMap();
+};
+
+const loadWorlds = async () => {
+  const worlds = await fetchJson('/worlds');
+  state.worlds = worlds;
+  elements.worldSelect.innerHTML = '';
+  worlds.forEach((world) => {
+    const option = document.createElement('option');
+    option.value = world.worldId;
+    option.textContent = `World ${world.worldId.slice(0, 8)}`;
+    elements.worldSelect.appendChild(option);
+  });
+  if (!state.worldId && worlds.length > 0) {
+    state.worldId = worlds[0].worldId;
+    updateHash('replace');
+  }
+  elements.emptyWorld.hidden = worlds.length > 0;
+};
+
+const runSearch = async (query) => {
+  if (!state.worldId || !query) {
+    elements.searchResults.hidden = true;
+    return;
+  }
+  const response = await fetchJson(`/world/${state.worldId}/search?q=${encodeURIComponent(query)}&limit=20`);
+  const results = response.results ?? response;
+  elements.searchResults.innerHTML = '';
+  results.forEach((result, index) => {
+    const button = document.createElement('button');
+    button.textContent = `${result.title} (${result.kind}${result.year !== null && result.year !== undefined ? ` · ${result.year}` : ''})`;
+    if (result.snippet) {
+      const snippet = document.createElement('div');
+      snippet.style.fontSize = '0.8rem';
+      snippet.style.color = 'rgba(255,255,255,0.6)';
+      snippet.textContent = result.snippet;
+      button.appendChild(snippet);
+    }
+    button.addEventListener('click', () => {
+      if (result.year !== null && result.year !== undefined) {
+        setYear(result.year);
+      }
+      if (result.kind === 'polity') selectPolity(result.id);
+      if (result.kind === 'war') selectWar(result.id);
+      if (result.kind === 'event') selectEvent(result.id);
+      if (result.kind === 'change') selectChange(result.id);
+      elements.searchResults.hidden = true;
+    });
+    if (index === state.searchActiveIndex) {
+      button.classList.add('active');
+    }
+    elements.searchResults.appendChild(button);
+  });
+  elements.searchResults.hidden = results.length === 0;
+};
+
+const handleGenerate = async () => {
+  const configText = elements.generateConfig.value || defaultConfig;
+  const response = await fetchJson('/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: configText
+  });
+  state.worldId = response.worldId;
+  elements.generateModal.close();
+  await loadWorlds();
+  updateHash();
+};
+
+elements.generateConfig.value = defaultConfig;
+elements.refreshWorlds.addEventListener('click', loadWorlds);
+elements.worldSelect.addEventListener('change', (event) => {
+  state.worldId = event.target.value;
+  updateHash();
 });
+elements.openGenerate.addEventListener('click', () => elements.generateModal.showModal());
+elements.closeGenerate.addEventListener('click', () => elements.generateModal.close());
+elements.generateWorld.addEventListener('click', handleGenerate);
+
+elements.yearInput.addEventListener(
+  'input',
+  debounce((event) => {
+    setYear(Number(event.target.value));
+    loadYearData().then(renderMap);
+  }, 120)
+);
+elements.yearSlider.addEventListener(
+  'input',
+  debounce((event) => {
+    setYear(Number(event.target.value));
+    loadYearData().then(renderMap);
+  }, 60)
+);
+document.querySelectorAll('.timeline-buttons button').forEach((button) => {
+  button.addEventListener('click', () => {
+    const step = Number(button.dataset.step);
+    setYear(state.year + step);
+    loadYearData().then(renderMap);
+  });
+});
+
+elements.timelineHeatmap.addEventListener('click', (event) => {
+  if (!state.worldMeta) return;
+  const rect = elements.timelineHeatmap.getBoundingClientRect();
+  const ratio = (event.clientX - rect.left) / rect.width;
+  const year = Math.round(state.worldMeta.startYear + ratio * (state.worldMeta.endYear - state.worldMeta.startYear));
+  setYear(year);
+  loadYearData().then(renderMap);
+});
+
+elements.timelineHeatmap.addEventListener('mousemove', (event) => {
+  if (!state.worldMeta) return;
+  const rect = elements.timelineHeatmap.getBoundingClientRect();
+  const ratio = (event.clientX - rect.left) / rect.width;
+  const year = Math.round(state.worldMeta.startYear + ratio * (state.worldMeta.endYear - state.worldMeta.startYear));
+  elements.timelineHeatmap.title = `Jump to year ${year}`;
+});
+
+elements.timelineHeatmap.addEventListener('mouseleave', () => {
+  elements.timelineHeatmap.title = '';
+});
+
+elements.layerSelect.addEventListener('change', (event) => {
+  state.layer = event.target.value;
+  updateHash();
+  renderMap();
+});
+
+elements.focusPolity.addEventListener('click', () => {
+  if (!state.selectedPolityId) return;
+  state.layer = 'political';
+  elements.layerSelect.value = 'political';
+  updateHash();
+  renderMap();
+});
+
+elements.showChange.addEventListener('click', () => {
+  if (!state.selectedChange) return;
+  renderMap();
+});
+
+elements.searchInput.addEventListener(
+  'input',
+  debounce((event) => {
+    state.searchActiveIndex = 0;
+    runSearch(event.target.value.trim());
+  }, 150)
+);
+
+elements.searchInput.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const items = Array.from(elements.searchResults.querySelectorAll('button'));
+    if (items.length === 0) return;
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    state.searchActiveIndex = (state.searchActiveIndex + delta + items.length) % items.length;
+    items.forEach((item, index) => item.classList.toggle('active', index === state.searchActiveIndex));
+  }
+  if (event.key === 'Enter') {
+    const items = Array.from(elements.searchResults.querySelectorAll('button'));
+    const active = items[state.searchActiveIndex];
+    if (active) {
+      active.click();
+    }
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === '/') {
+    event.preventDefault();
+    elements.searchInput.focus();
+    elements.searchInput.select();
+  }
+  if (event.key === 'Escape') {
+    elements.searchInput.blur();
+    elements.searchResults.hidden = true;
+  }
+  if (event.key === 'ArrowLeft') {
+    setYear(state.year - 1);
+    loadYearData().then(renderMap);
+  }
+  if (event.key === 'ArrowRight') {
+    setYear(state.year + 1);
+    loadYearData().then(renderMap);
+  }
+});
+
+elements.tabButtons.forEach((button) => {
+  button.addEventListener('click', () => renderTabs(button.dataset.tab));
+});
+
+elements.canvas.addEventListener('mousemove', updateTooltip);
+elements.canvas.addEventListener('mouseleave', () => (elements.tooltip.hidden = true));
+elements.canvas.addEventListener('click', handleMapClick);
+
+window.addEventListener('hashchange', syncFromHash);
+
+loadWorlds().then(syncFromHash);

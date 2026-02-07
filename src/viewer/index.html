@@ -3,48 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TerraForge History Viewer</title>
+    <title>TerraForge Viewer</title>
     <link rel="stylesheet" href="/viewer/style.css" />
   </head>
   <body>
     <header class="top-bar">
       <div class="brand">
         <div class="logo">TerraForge</div>
-        <div class="tagline">History-first world viewer</div>
+        <div class="tagline">Encyclopedia Viewer</div>
       </div>
       <div class="search-wrap">
-        <input id="global-search" type="search" placeholder="Search polities, wars, events..." />
+        <input id="global-search" type="search" placeholder="Search polities, wars, events, changes..." />
         <div id="search-results" class="search-results" hidden></div>
-        <div class="search-hint">Shortcuts: <kbd>/</kbd> focus, <kbd>Enter</kbd> open, <kbd>Esc</kbd> close</div>
+        <div class="search-hint">Shortcuts: <kbd>/</kbd> focus, <kbd>Esc</kbd> close</div>
       </div>
       <div class="top-actions">
-        <button id="refresh-worlds" type="button">Refresh worlds</button>
-        <select id="world-select"></select>
+        <select id="world-select" aria-label="Select world"></select>
+        <button id="open-generate" type="button">Generate</button>
+        <button id="refresh-worlds" type="button">Refresh</button>
       </div>
     </header>
 
-    <main class="app-layout">
-      <section class="panel timeline-panel">
-        <h2>Timeline Navigator</h2>
-        <div id="world-meta" class="meta"></div>
+    <div class="layout">
+      <aside class="panel timeline-panel">
+        <div class="panel-header">
+          <h2>Timeline Navigator</h2>
+          <div id="world-meta" class="meta"></div>
+        </div>
 
         <div id="empty-world" class="empty-world" hidden>
           <h3>No world loaded yet</h3>
           <p>Generate a world to start exploring its history.</p>
-          <textarea id="generate-config" rows="10"></textarea>
-          <button id="generate-world" type="button">Generate world</button>
         </div>
 
         <div class="timeline-controls">
-          <label>
+          <label class="year-input">
             Jump to year
             <input id="year-input" type="number" />
           </label>
           <div class="timeline-buttons">
+            <button data-step="-100">-100</button>
             <button data-step="-10">-10</button>
             <button data-step="-1">-1</button>
             <button data-step="1">+1</button>
             <button data-step="10">+10</button>
+            <button data-step="100">+100</button>
           </div>
           <input id="year-slider" type="range" min="0" max="0" step="1" />
           <div class="year-display">Year: <span id="year-value">-</span></div>
@@ -52,80 +55,106 @@
 
         <div class="timeline-summary">
           <h3>Timeline heatmap</h3>
-          <div id="timeline-heatmap" class="heatmap"></div>
+          <canvas id="timeline-heatmap" class="heatmap" height="64"></canvas>
         </div>
 
         <div class="events-year">
           <h3>Events in this year</h3>
           <div id="events-groups"></div>
         </div>
+      </aside>
 
-        <div class="ledger">
+      <section class="panel year-panel">
+        <div class="panel-header">
+          <h2 id="year-title">Year</h2>
+          <div class="panel-subtitle">Timeline-first encyclopedia page</div>
+        </div>
+
+        <section class="year-section">
+          <h3>Headline events</h3>
+          <div id="headline-events" class="cards"></div>
+        </section>
+
+        <section class="year-section">
+          <h3>Wars overview</h3>
+          <div id="wars-overview" class="list"></div>
+        </section>
+
+        <section class="year-section">
           <h3>Absorption ledger</h3>
-          <div class="ledger-filters">
-            <label>Polity
-              <select id="ledger-polity"></select>
-            </label>
-            <label>Type
-              <select id="ledger-type"></select>
-            </label>
-            <label>From
-              <input id="ledger-from" type="number" />
-            </label>
-            <label>To
-              <input id="ledger-to" type="number" />
-            </label>
-            <button id="ledger-refresh" type="button">Apply</button>
-          </div>
-          <div class="ledger-table" id="ledger-table"></div>
-        </div>
+          <div id="absorption-ledger" class="list"></div>
+        </section>
 
-        <div class="top-powers">
-          <h3>Top powers over time</h3>
-          <label>Decade
-            <select id="top-powers-decade"></select>
-          </label>
-          <div id="top-powers-list" class="list"></div>
-        </div>
+        <section class="year-section">
+          <h3>Top powers at this year</h3>
+          <div id="top-powers" class="list"></div>
+        </section>
+
+        <section class="year-section">
+          <h3>Map mini view</h3>
+          <div class="map-mini">
+            <p>Use the full map below to explore cells, ownership, and change footprints.</p>
+            <div class="map-mini-actions">
+              <button id="focus-polity" type="button">Focus selected polity</button>
+              <button id="show-change" type="button">Show change footprint</button>
+            </div>
+          </div>
+        </section>
       </section>
 
-      <section class="panel inspector-panel">
-        <h2>Inspector</h2>
-        <div id="story-card" class="story-card">Select an event to see its story.</div>
+      <aside class="panel inspector-panel">
+        <div class="panel-header">
+          <h2>Inspector</h2>
+          <div class="panel-subtitle" id="inspector-subtitle">Select an item to open its page.</div>
+        </div>
         <div class="tabs">
-          <button class="tab-button active" data-tab="polity">Polity</button>
+          <button class="tab-button active" data-tab="event">Event</button>
+          <button class="tab-button" data-tab="polity">Polity</button>
           <button class="tab-button" data-tab="war">War</button>
           <button class="tab-button" data-tab="change">Change</button>
         </div>
-        <div class="tab-content active" id="tab-polity"></div>
+        <div class="tab-content active" id="tab-event"></div>
+        <div class="tab-content" id="tab-polity"></div>
         <div class="tab-content" id="tab-war"></div>
         <div class="tab-content" id="tab-change"></div>
-      </section>
+      </aside>
+    </div>
 
-      <section class="panel map-panel">
-        <div class="map-header">
-          <h2>Map</h2>
-          <div class="map-controls">
-            <label>
-              Layer
-              <select id="layer-select">
-                <option value="political">Political</option>
-                <option value="biome">Biome</option>
-                <option value="elevation">Elevation</option>
-                <option value="resources">Resources</option>
-              </select>
-            </label>
-            <button id="focus-polity" type="button">Focus on selected polity</button>
-            <button id="show-change" type="button">Show change footprint</button>
-          </div>
+    <section class="panel map-panel">
+      <div class="map-header">
+        <h2>World Map</h2>
+        <div class="map-controls">
+          <label>
+            Layer
+            <select id="layer-select">
+              <option value="political">Political</option>
+              <option value="biome">Biome</option>
+              <option value="elevation">Elevation</option>
+              <option value="resources">Resources</option>
+            </select>
+          </label>
+          <div class="map-legend" id="map-notes"></div>
         </div>
-        <div class="canvas-wrapper">
-          <canvas id="map-canvas"></canvas>
-          <div id="map-tooltip" class="tooltip" hidden></div>
+      </div>
+      <div class="canvas-wrapper">
+        <canvas id="map-canvas"></canvas>
+        <div id="map-tooltip" class="tooltip" hidden></div>
+      </div>
+    </section>
+
+    <dialog id="generate-modal" class="modal">
+      <form method="dialog" class="modal-content">
+        <div class="modal-header">
+          <h3>Generate a World</h3>
+          <button type="button" class="modal-close" id="close-generate">×</button>
         </div>
-        <div class="map-notes" id="map-notes"></div>
-      </section>
-    </main>
+        <p>Paste a config JSON to generate a new world bundle.</p>
+        <textarea id="generate-config" rows="12"></textarea>
+        <div class="modal-actions">
+          <button type="button" id="generate-world">Generate world</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/viewer/app.js"></script>
   </body>

@@ -34,6 +34,18 @@ const parseOptionalInt = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const calculateEventSignificance = (event: TimelineEvent): number => {
+  return (event.actors.primary?.length ?? 0) + (event.actors.secondary?.length ?? 0) + event.effects.length + event.causes.length;
+};
+
+const countRanges = (ranges: { start: number; end: number }[]): number => {
+  let total = 0;
+  for (const range of ranges) {
+    total += range.end - range.start + 1;
+  }
+  return total;
+};
+
 const selectSnapshot = (snapshots: Snapshot[], year: number): Snapshot | undefined => {
   if (snapshots.length === 0) {
     return undefined;
@@ -112,6 +124,13 @@ export function buildServer() {
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
     return reply.send(world.meta);
+  });
+
+  app.get('/world/:worldId/planet', async (request, reply) => {
+    const { worldId } = request.params as { worldId: string };
+    const world = worlds.get(worldId);
+    if (!world) return reply.code(404).send({ error: 'world not found' });
+    return reply.send(world.planet);
   });
 
   app.get('/world/:worldId/map', async (request, reply) => {
@@ -216,9 +235,22 @@ export function buildServer() {
     return reply.send(war);
   });
 
+  app.get('/world/:worldId/wars', async (request, reply) => {
+    const { worldId } = request.params as { worldId: string };
+    const world = worlds.get(worldId);
+    if (!world) return reply.code(404).send({ error: 'world not found' });
+    return reply.send(world.wars);
+  });
+
   app.get('/world/:worldId/changes', async (request, reply) => {
     const { worldId } = request.params as { worldId: string };
-    const { year, from, to, type } = request.query as { year?: string; from?: string; to?: string; type?: string };
+    const { year, from, to, type, polity } = request.query as {
+      year?: string;
+      from?: string;
+      to?: string;
+      type?: string;
+      polity?: string;
+    };
     const world = worlds.get(worldId);
     if (!world) return reply.code(404).send({ error: 'world not found' });
     const yearParsed = parseOptionalInt(year);
@@ -233,21 +265,26 @@ export function buildServer() {
     if (to !== undefined && toParsed === undefined) {
       return reply.code(400).send({ error: 'invalid to' });
     }
+    const filterByPolity = (change: WorldBundle['territorialChanges'][number]) => {
+      if (!polity) return true;
+      return change.winnerPolityId === polity || change.loserPolityId === polity;
+    };
+    const filterByType = (change: WorldBundle['territorialChanges'][number]) => (type ? change.type === type : true);
     if (yearParsed !== undefined) {
-      const changes = world.territorialChanges.filter((change) => change.year === yearParsed);
+      const changes = world.territorialChanges.filter((change) => change.year === yearParsed).filter(filterByPolity).filter(filterByType);
       return reply.send(changes);
     }
     const fromYear = fromParsed ?? world.meta.startYear;
     const toYear = toParsed ?? world.meta.endYear;
     const filtered = world.territorialChanges.filter((change) => change.year >= fromYear && change.year <= toYear);
-    const typed = type ? filtered.filter((change) => change.type === type) : filtered;
-    const sorted = typed.sort((a, b) => a.year - b.year);
+    const typed = filtered.filter(filterByPolity).filter(filterByType);
+    const sorted = typed.sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
     return reply.send(sorted);
   });
 
   app.get('/world/:worldId/years/summary', async (request, reply) => {
     const { worldId } = request.params as { worldId: string };
-    const { from, to } = request.query as { from?: string; to?: string };
+    const { from, to, legacy } = request.query as { from?: string; to?: string; legacy?: string };
     const world = worlds.get(worldId);
     const indexes = worldIndexes.get(worldId);
     if (!world || !indexes) return reply.code(404).send({ error: 'world not found' });
@@ -261,30 +298,38 @@ export function buildServer() {
     }
     const fromYear = fromParsed ?? world.meta.startYear;
     const toYear = toParsed ?? world.meta.endYear;
-    const summary = [];
+    const years = [];
     for (let year = fromYear; year <= toYear; year += 1) {
       const eventIds = indexes.eventsByYear.get(year) ?? [];
       const events = eventIds.map((id) => indexes.eventsById.get(id)).filter(Boolean) as TimelineEvent[];
+      const changeIds = indexes.changesByYear.get(year) ?? [];
       const counts: Record<string, number> = {};
-      const headline = events
+      const headlines = events
         .map((event) => ({
           id: event.id,
-          score: (event.actors.primary?.length ?? 0) + (event.actors.secondary?.length ?? 0) + event.effects.length
+          type: event.type,
+          title: event.title,
+          significance: calculateEventSignificance(event)
         }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3)
-        .map((item) => item.id);
+        .sort((a, b) => b.significance - a.significance || a.id.localeCompare(b.id))
+        .slice(0, 5);
       for (const event of events) {
         counts[event.type] = (counts[event.type] ?? 0) + 1;
       }
-      summary.push({ year, counts, headline });
+      if (changeIds.length > 0) {
+        counts.change = (counts.change ?? 0) + changeIds.length;
+      }
+      years.push({ year, counts, headlines });
     }
-    return reply.send(summary);
+    if (legacy === '1') {
+      return reply.send(years);
+    }
+    return reply.send({ from: fromYear, to: toYear, years });
   });
 
   const handleSearch = (request: { params: unknown; query: unknown }, reply: { code: (status: number) => any; send: (payload: unknown) => any }) => {
     const { worldId } = request.params as { worldId: string };
-    const { q, limit } = request.query as { q?: string; limit?: string };
+    const { q, limit, legacy } = request.query as { q?: string; limit?: string; legacy?: string };
     const world = worlds.get(worldId);
     const indexes = worldIndexes.get(worldId);
     if (!world || !indexes) return reply.code(404).send({ error: 'world not found' });
@@ -292,9 +337,14 @@ export function buildServer() {
     if (limit !== undefined && limitParsed === undefined) {
       return reply.code(400).send({ error: 'invalid limit' });
     }
-    if (!q) return reply.send([]);
+    if (!q) {
+      return legacy === '1' ? reply.send([]) : reply.send({ q: '', results: [] });
+    }
     const results = searchWorldIndexes(indexes, q, limitParsed ?? 20);
-    return reply.send(results);
+    if (legacy === '1') {
+      return reply.send(results);
+    }
+    return reply.send({ q, results });
   };
 
   app.get('/world/:worldId/search', async (request, reply) => {
@@ -325,14 +375,52 @@ export function buildServer() {
     const events = eventIds
       .map((eventId) => indexes.eventsById.get(eventId))
       .filter((event): event is TimelineEvent => Boolean(event))
-      .filter((event) => event.year >= fromYear && event.year <= toYear);
+      .filter((event) => event.year >= fromYear && event.year <= toYear)
+      .map((event) => ({
+        year: event.year,
+        id: event.id,
+        type: event.type,
+        title: event.title,
+        significance: calculateEventSignificance(event),
+        snippet: event.explanation[0]
+      }))
+      .sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
     const changeIds = indexes.changesByPolity.get(id) ?? [];
     const changes = changeIds
       .map((changeId) => indexes.changesById.get(changeId))
       .filter((change): change is WorldBundle['territorialChanges'][number] => Boolean(change))
-      .filter((change) => change.year >= fromYear && change.year <= toYear);
+      .filter((change) => change.year >= fromYear && change.year <= toYear)
+      .map((change) => {
+        const gained = change.winnerPolityId === id;
+        const otherPolityId = gained ? change.loserPolityId : change.winnerPolityId;
+        return {
+          year: change.year,
+          id: change.id,
+          kind: change.type,
+          gained,
+          otherPolityId,
+          cellsCount: countRanges(change.regionsTransferredCompressed)
+        };
+      })
+      .sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
     const statsSeries = (indexes.polityStatsSeries.get(id) ?? []).filter((point) => point.year >= fromYear && point.year <= toYear);
-    return reply.send({ events, changes, statsSeries });
+    const series = {
+      years: statsSeries.map((point) => point.year),
+      powerScore: statsSeries.map((point) => point.stats.powerScore),
+      population: statsSeries.map((point) => point.stats.population),
+      gdp: statsSeries.map((point) => point.stats.gdp),
+      techLevel: statsSeries.map((point) => point.stats.techLevel),
+      stability: statsSeries.map((point) => point.stats.stability),
+      military: statsSeries.map((point) => point.stats.military)
+    };
+    return reply.send({ polityId: id, from: fromYear, to: toYear, series, events, changes, statsSeries });
+  });
+
+  app.get('/world/:worldId/cells', async (request, reply) => {
+    const { worldId } = request.params as { worldId: string };
+    const world = worlds.get(worldId);
+    if (!world) return reply.code(404).send({ error: 'world not found' });
+    return reply.send(world.cells);
   });
 
   app.get('/world/:worldId/export', async (request, reply) => {
