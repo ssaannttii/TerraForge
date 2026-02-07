@@ -26,7 +26,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  padding: 1rem 2rem;
+  padding: 0.8rem 2rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: #11151c;
   position: sticky;
@@ -37,11 +37,12 @@ textarea {
 .brand .logo {
   font-size: 1.4rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .brand .tagline {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .search-wrap {
@@ -51,11 +52,17 @@ textarea {
 
 .search-wrap input {
   width: 100%;
-  padding: 0.6rem 0.8rem;
+  padding: 0.55rem 0.8rem;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   background: #0f1116;
   color: inherit;
+  transition: border-color 0.15s;
+}
+
+.search-wrap input:focus {
+  border-color: rgba(100, 160, 255, 0.5);
+  outline: none;
 }
 
 .search-results {
@@ -88,9 +95,16 @@ textarea {
 }
 
 .search-hint {
-  margin-top: 0.4rem;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.55);
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.search-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  padding: 0 0.3em;
+  font-size: 0.85em;
 }
 
 .top-actions {
@@ -112,13 +126,21 @@ textarea {
   padding: 0.4rem 0.6rem;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 0.12s;
+}
+
+.top-actions button:hover,
+.timeline-buttons button:hover,
+.map-mini-actions button:hover,
+.modal-actions button:hover {
+  background: #252b34;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.4fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.5fr) minmax(280px, 1fr);
   gap: 1rem;
-  padding: 1.5rem 2rem 1rem;
+  padding: 1rem 2rem 1rem;
 }
 
 .panel {
@@ -138,16 +160,27 @@ textarea {
 
 .panel-header h2 {
   margin: 0;
+  font-size: 1.1rem;
 }
 
 .panel-subtitle {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .meta {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.muted {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.85em;
+}
+
+.quiet {
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
 }
 
 .empty-world {
@@ -157,23 +190,104 @@ textarea {
   border-radius: 8px;
 }
 
+/* --- Playback controls --- */
+
+.playback-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.play-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: #1a1f26;
+  color: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.play-btn:hover {
+  background: #252b34;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.play-btn.playing {
+  border-color: rgba(100, 200, 160, 0.6);
+  background: rgba(100, 200, 160, 0.12);
+}
+
+.year-display-big {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  flex: 1;
+}
+
+.speed-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.speed-label select {
+  background: #1a1f26;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  padding: 0.25rem 0.4rem;
+  border-radius: 5px;
+  font-size: 0.8rem;
+}
+
+/* --- Timeline --- */
+
 .timeline-controls {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  margin-top: 1rem;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
 }
 
 .timeline-buttons {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.4rem;
+  gap: 0.3rem;
+}
+
+.timeline-buttons button {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.4rem;
 }
 
 .year-input {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.year-input input {
+  background: #0f1116;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #5ea4e0;
 }
 
 .year-display {
@@ -182,46 +296,184 @@ textarea {
 
 .timeline-summary,
 .events-year {
-  margin-top: 1.5rem;
+  margin-top: 1.2rem;
+}
+
+.timeline-summary h3,
+.events-year h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.4rem;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .heatmap {
   width: 100%;
   background: #0f1116;
   border-radius: 8px;
-  margin-top: 0.4rem;
+  margin-top: 0.3rem;
   display: block;
+  cursor: pointer;
 }
 
+/* --- Events --- */
+
 .events-year .event-group {
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.events-year .event-group h4 {
+  font-size: 0.8rem;
+  margin: 0.4rem 0 0.2rem;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .events-year .event-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  margin: 0.3rem 0;
+  padding: 0.35rem 0.6rem;
+  margin: 0.2rem 0;
   cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.1s;
 }
+
+.events-year .event-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ev-icon {
+  margin-right: 0.3em;
+}
+
+/* --- Cards / List --- */
 
 .cards,
 .list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .cards .card,
 .list .item {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: 8px;
   padding: 0.6rem 0.7rem;
+  transition: background 0.1s;
+  cursor: pointer;
 }
 
-.year-panel .year-section {
-  margin-top: 1.2rem;
+.cards .card:hover,
+.list .item:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
+
+/* --- Headlines --- */
+
+.headlines .headline-card {
+  border-left: 3px solid rgba(100, 160, 255, 0.4);
+  padding-left: 0.8rem;
+}
+
+.headline-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.headline-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.headline-narrative {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+
+.headline-card.quiet {
+  border-left-color: rgba(255, 255, 255, 0.1);
+}
+
+/* --- Year panel sections --- */
+
+.year-panel .year-section {
+  margin-top: 1rem;
+}
+
+.year-panel .year-section h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.4rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* --- Wars --- */
+
+.war-entry {
+  padding: 0.2rem 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.war-label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.3rem;
+}
+
+.war-ongoing .war-label { color: #e06050; }
+.war-started .war-label { color: #e09040; }
+.war-ended .war-label { color: #60c080; }
+
+/* --- Powers --- */
+
+.power-item {
+  padding: 0.5rem 0.7rem;
+}
+
+.power-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.power-rank {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+  min-width: 1.5em;
+}
+
+.power-bar-bg {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  margin: 0.3rem 0 0.15rem;
+  overflow: hidden;
+}
+
+.power-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.power-stats {
+  font-size: 0.78rem;
+}
+
+/* --- Change items --- */
+
+.change-item {
+  font-size: 0.9rem;
+}
+
+/* --- Map mini --- */
 
 .map-mini {
   background: rgba(255, 255, 255, 0.04);
@@ -235,35 +487,42 @@ textarea {
   margin-top: 0.6rem;
 }
 
+/* --- Inspector tabs --- */
+
 .tabs {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
 }
 
 .tab-button {
   flex: 1;
   background: #1a1f26;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: inherit;
-  padding: 0.4rem;
+  padding: 0.35rem;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.12s;
 }
 
 .tab-button.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(100, 160, 255, 0.15);
+  border-color: rgba(100, 160, 255, 0.3);
 }
 
 .tab-content {
   display: none;
-  margin-top: 0.8rem;
-  font-size: 0.9rem;
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
 }
 
 .tab-content.active {
   display: block;
 }
+
+/* --- Map --- */
 
 .map-panel {
   margin: 0 2rem 2rem;
@@ -276,6 +535,11 @@ textarea {
   gap: 1rem;
 }
 
+.map-header h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
 .map-controls {
   display: flex;
   align-items: center;
@@ -285,8 +549,8 @@ textarea {
 
 .canvas-wrapper {
   position: relative;
-  margin-top: 0.8rem;
-  background: #0f1116;
+  margin-top: 0.6rem;
+  background: #0a0e14;
   border-radius: 12px;
   overflow: hidden;
 }
@@ -301,18 +565,22 @@ textarea {
 .tooltip {
   position: absolute;
   pointer-events: none;
-  background: rgba(20, 24, 30, 0.95);
+  background: rgba(16, 20, 28, 0.96);
   color: #f0f4f8;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   padding: 0.4rem 0.6rem;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  max-width: 220px;
+  line-height: 1.4;
 }
 
 .map-legend {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.5);
 }
+
+/* --- Modal --- */
 
 .modal {
   border: none;
@@ -321,7 +589,7 @@ textarea {
 }
 
 .modal::backdrop {
-  background: rgba(5, 7, 10, 0.7);
+  background: rgba(5, 7, 10, 0.75);
 }
 
 .modal-content {
@@ -357,12 +625,19 @@ textarea {
   padding: 0.6rem;
 }
 
+/* --- Responsive --- */
+
 @media (max-width: 1200px) {
   .layout {
     grid-template-columns: 1fr;
   }
 
   .map-panel {
-    margin: 0 1.5rem 2rem;
+    margin: 0 1rem 2rem;
+  }
+
+  .top-bar {
+    flex-wrap: wrap;
+    padding: 0.6rem 1rem;
   }
 }

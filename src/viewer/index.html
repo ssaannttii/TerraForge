@@ -15,7 +15,7 @@
       <div class="search-wrap">
         <input id="global-search" type="search" placeholder="Search polities, wars, events, changes..." />
         <div id="search-results" class="search-results" hidden></div>
-        <div class="search-hint">Shortcuts: <kbd>/</kbd> focus, <kbd>Esc</kbd> close</div>
+        <div class="search-hint"><kbd>/</kbd> search · <kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> step · <kbd>Esc</kbd> stop</div>
       </div>
       <div class="top-actions">
         <select id="world-select" aria-label="Select world"></select>
@@ -37,10 +37,22 @@
         </div>
 
         <div class="timeline-controls">
-          <label class="year-input">
-            Jump to year
-            <input id="year-input" type="number" />
-          </label>
+          <div class="playback-row">
+            <button id="play-toggle" class="play-btn" type="button" title="Play / Pause (Space)">&#9654;</button>
+            <div class="year-display-big"><span id="year-value">-</span></div>
+            <label class="speed-label">
+              Speed
+              <select id="play-speed">
+                <option value="1">1x</option>
+                <option value="3">3x</option>
+                <option value="5" selected>5x</option>
+                <option value="10">10x</option>
+                <option value="25">25x</option>
+                <option value="50">50x</option>
+              </select>
+            </label>
+          </div>
+          <input id="year-slider" type="range" min="0" max="0" step="1" />
           <div class="timeline-buttons">
             <button data-step="-100">-100</button>
             <button data-step="-10">-10</button>
@@ -49,8 +61,10 @@
             <button data-step="10">+10</button>
             <button data-step="100">+100</button>
           </div>
-          <input id="year-slider" type="range" min="0" max="0" step="1" />
-          <div class="year-display">Year: <span id="year-value">-</span></div>
+          <label class="year-input">
+            Jump to year
+            <input id="year-input" type="number" />
+          </label>
         </div>
 
         <div class="timeline-summary">
@@ -71,8 +85,8 @@
         </div>
 
         <section class="year-section">
-          <h3>Headline events</h3>
-          <div id="headline-events" class="cards"></div>
+          <h3>Headlines</h3>
+          <div id="headline-events" class="cards headlines"></div>
         </section>
 
         <section class="year-section">

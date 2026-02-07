@@ -2,21 +2,21 @@ const defaultConfig = `{
   "seed": 101,
   "planet": {
     "radiusKm": 6371,
-    "oceanCoverage": 0.66,
-    "numContinents": 3,
-    "mapWidth": 120,
-    "mapHeight": 60,
+    "oceanCoverage": 0.68,
+    "numContinents": 5,
+    "mapWidth": 240,
+    "mapHeight": 120,
     "tectonicsMode": "lite",
     "climateModel": "koppen-lite"
   },
   "societies": {
-    "numCultureGroups": 25,
-    "numCitiesTarget": 60,
-    "numPolitiesTarget": 60,
+    "numCultureGroups": 40,
+    "numCitiesTarget": 180,
+    "numPolitiesTarget": 120,
     "startingYear": 0,
-    "endingYear": 500,
+    "endingYear": 1500,
     "techPace": "medium",
-    "migrationIntensity": 0.3
+    "migrationIntensity": 0.35
   },
   "geopolitics": {
     "aggression": 0.45,
@@ -83,7 +83,10 @@ const state = {
   selectedChange: null,
   selectedEvent: null,
   highlightCellId: null,
-  searchActiveIndex: 0
+  searchActiveIndex: 0,
+  playing: false,
+  playSpeed: 5,
+  playTimer: null
 };
 
 const elements = {
@@ -114,6 +117,8 @@ const elements = {
   tabChange: document.getElementById('tab-change'),
   searchInput: document.getElementById('global-search'),
   searchResults: document.getElementById('search-results'),
+  playToggle: document.getElementById('play-toggle'),
+  playSpeed: document.getElementById('play-speed'),
   layerSelect: document.getElementById('layer-select'),
   focusPolity: document.getElementById('focus-polity'),
   showChange: document.getElementById('show-change'),
@@ -171,6 +176,82 @@ const colorFromId = (id, saturation = 0.55, lightness = 0.55) => {
   const hash = fnv1a(id);
   const hue = hash % 360;
   return hslToRgb(hue, saturation, lightness);
+};
+
+const biomeColors = {
+  ocean:         [18, 55, 120],
+  tundra:        [190, 210, 225],
+  taiga:         [35, 85, 55],
+  steppe:        [165, 175, 85],
+  temperate:     [55, 140, 65],
+  desert:        [210, 185, 110],
+  mediterranean: [140, 170, 70],
+  savanna:       [195, 170, 80],
+  tropical:      [25, 115, 50]
+};
+
+const oceanColor = [18, 55, 120];
+const landEmptyColor = [50, 55, 45];
+
+const elevationColor = (normalized, isOcean) => {
+  if (isOcean) {
+    return [Math.floor(10 + normalized * 25), Math.floor(30 + normalized * 50), Math.floor(80 + normalized * 80)];
+  }
+  if (normalized < 0.4) {
+    const t = normalized / 0.4;
+    return [Math.floor(55 + t * 80), Math.floor(130 + t * 15), Math.floor(55 - t * 20)];
+  }
+  if (normalized < 0.75) {
+    const t = (normalized - 0.4) / 0.35;
+    return [Math.floor(135 + t * 55), Math.floor(145 - t * 40), Math.floor(35 + t * 25)];
+  }
+  const t = (normalized - 0.75) / 0.25;
+  return [Math.floor(190 + t * 65), Math.floor(105 + t * 150), Math.floor(60 + t * 195)];
+};
+
+const eventIcons = {
+  WAR_DECLARED: '\u2694\uFE0F',
+  WAR_ENDED: '\uD83D\uDD4A\uFE0F',
+  TREATY: '\uD83D\uDCDC',
+  ALLIANCE: '\uD83E\uDD1D',
+  ANNEXATION: '\uD83D\uDDFA\uFE0F',
+  SECESSION: '\uD83D\uDEA9',
+  CRISIS: '\u26A0\uFE0F',
+  REBELLION: '\uD83D\uDD25',
+  TECH: '\uD83D\uDD2C',
+  ECONOMY: '\uD83D\uDCB0',
+  DEFAULT: '\uD83D\uDCCC'
+};
+
+const getEventIcon = (type) => {
+  const t = type.toUpperCase();
+  if (t.includes('WAR_DECLARED') || t.includes('WAR') && t.includes('START')) return eventIcons.WAR_DECLARED;
+  if (t.includes('WAR_ENDED') || t.includes('WAR') && t.includes('END')) return eventIcons.WAR_ENDED;
+  if (t.includes('TREATY')) return eventIcons.TREATY;
+  if (t.includes('ALLIANCE')) return eventIcons.ALLIANCE;
+  if (t.includes('ANNEX') || t.includes('ABSORB')) return eventIcons.ANNEXATION;
+  if (t.includes('SECESSION') || t.includes('UNION')) return eventIcons.SECESSION;
+  if (t.includes('CRISIS')) return eventIcons.CRISIS;
+  if (t.includes('REBELLION')) return eventIcons.REBELLION;
+  if (t.includes('TECH')) return eventIcons.TECH;
+  if (t.includes('ECONOMY')) return eventIcons.ECONOMY;
+  return eventIcons.DEFAULT;
+};
+
+const narrativeForEvent = (event) => {
+  const type = event.type.toUpperCase();
+  const actors = event.actors?.primary ?? [];
+  const a0 = actors[0] ? (state.politiesById.get(actors[0]) ?? actors[0]) : '';
+  const a1 = actors[1] ? (state.politiesById.get(actors[1]) ?? actors[1]) : '';
+  if (type.includes('WAR_DECLARED')) return a1 ? `${a0} declares war on ${a1}` : `${a0} goes to war`;
+  if (type.includes('WAR_ENDED')) return a1 ? `War between ${a0} and ${a1} comes to an end` : `${a0}'s war ends`;
+  if (type.includes('TREATY')) return `${a0} signs a treaty${a1 ? ` with ${a1}` : ''}`;
+  if (type.includes('ALLIANCE')) return `${a0} forges an alliance${a1 ? ` with ${a1}` : ''}`;
+  if (type.includes('ANNEX') || type.includes('ABSORB')) return a1 ? `${a0} annexes territory from ${a1}` : `${a0} expands its borders`;
+  if (type.includes('SECESSION')) return `A new state breaks away from ${a0}`;
+  if (type.includes('UNION')) return `${a0} and ${a1} unite into one state`;
+  if (event.explanation?.length) return event.explanation[0];
+  return event.title;
 };
 
 const formatNumber = (value) => {
@@ -306,10 +387,19 @@ const renderHeatmap = () => {
   const barWidth = width / totalYears;
   counts.forEach((count, index) => {
     const intensity = count / maxCount;
-    ctxHeat.fillStyle = `rgba(94, 228, 199, ${0.2 + intensity * 0.8})`;
+    const r = Math.floor(60 + intensity * 195);
+    const g = Math.floor(140 + (1 - intensity) * 80);
+    const b = Math.floor(80 - intensity * 40);
+    ctxHeat.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.25 + intensity * 0.75})`;
     const x = index * barWidth;
     ctxHeat.fillRect(x, height - intensity * height, Math.max(barWidth - 0.5, 1), intensity * height);
   });
+  if (state.year !== null && state.worldMeta) {
+    const yearIdx = state.year - state.worldMeta.startYear;
+    const curX = yearIdx * barWidth;
+    ctxHeat.fillStyle = '#fff';
+    ctxHeat.fillRect(curX, 0, Math.max(barWidth, 2), height);
+  }
 };
 
 const renderEventsInYear = (events) => {
@@ -343,7 +433,8 @@ const renderEventsInYear = (events) => {
     items.forEach((event) => {
       const card = document.createElement('div');
       card.className = 'event-card';
-      card.textContent = event.title;
+      const icon = getEventIcon(event.type);
+      card.innerHTML = `<span class="ev-icon">${icon}</span> ${event.title}`;
       card.addEventListener('click', () => selectEvent(event.id));
       group.appendChild(card);
     });
@@ -353,10 +444,16 @@ const renderEventsInYear = (events) => {
 
 const renderHeadlineEvents = (events) => {
   elements.headlineEvents.innerHTML = '';
+  if (events.length === 0) {
+    elements.headlineEvents.innerHTML = '<div class="card headline-card quiet">A quiet year. No major events recorded.</div>';
+    return;
+  }
   events.slice(0, 5).forEach((event) => {
     const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `<strong>${event.title}</strong><div class="muted">Type: ${event.type}</div>`;
+    card.className = 'card headline-card';
+    const icon = getEventIcon(event.type);
+    const narrative = narrativeForEvent(event);
+    card.innerHTML = `<div class="headline-row"><span class="headline-icon">${icon}</span><div><strong>${event.title}</strong><div class="headline-narrative">${narrative}</div></div></div>`;
     card.addEventListener('click', () => selectEvent(event.id));
     elements.headlineEvents.appendChild(card);
   });
@@ -368,36 +465,44 @@ const renderWarsOverview = (year) => {
   const ended = state.wars.filter((war) => war.endYear === year);
   const ongoing = state.wars.filter((war) => war.startYear <= year && (!war.endYear || war.endYear > year));
 
-  const section = (label, list) => {
+  const section = (label, list, cssClass) => {
+    if (list.length === 0) return;
     const wrapper = document.createElement('div');
-    wrapper.className = 'item';
-    wrapper.innerHTML = `<strong>${label}</strong>`;
+    wrapper.className = `item war-section ${cssClass}`;
+    wrapper.innerHTML = `<div class="war-label">${label} (${list.length})</div>`;
     list.slice(0, 5).forEach((war) => {
       const line = document.createElement('div');
-      line.textContent = `${war.name} (${war.startYear}${war.endYear ? `-${war.endYear}` : ''})`;
+      line.className = 'war-entry';
+      const sidesA = war.sides.A.map((id) => state.politiesById.get(id) ?? id).slice(0, 2).join(', ');
+      const sidesB = war.sides.B.map((id) => state.politiesById.get(id) ?? id).slice(0, 2).join(', ');
+      line.innerHTML = `\u2694\uFE0F <strong>${war.name}</strong><div class="muted">${sidesA} vs ${sidesB}</div>`;
       line.addEventListener('click', () => selectWar(war.id));
       wrapper.appendChild(line);
     });
     elements.warsOverview.appendChild(wrapper);
   };
 
-  section('Started', started);
-  section('Ended', ended);
-  section('Ongoing', ongoing);
+  section('Ongoing', ongoing, 'war-ongoing');
+  section('Just started', started, 'war-started');
+  section('Just ended', ended, 'war-ended');
+  if (started.length === 0 && ended.length === 0 && ongoing.length === 0) {
+    elements.warsOverview.innerHTML = '<div class="item quiet">Peace reigns. No wars this year.</div>';
+  }
 };
 
 const renderAbsorptionLedger = (changes) => {
   elements.absorptionLedger.innerHTML = '';
   if (changes.length === 0) {
-    elements.absorptionLedger.innerHTML = '<div class="item">No territorial changes recorded this year.</div>';
+    elements.absorptionLedger.innerHTML = '<div class="item quiet">No territorial changes this year.</div>';
     return;
   }
   changes.forEach((change) => {
-    const winner = change.winnerPolityId ? state.politiesById.get(change.winnerPolityId) ?? change.winnerPolityId : 'Unknown';
-    const loser = change.loserPolityId ? state.politiesById.get(change.loserPolityId) ?? change.loserPolityId : 'Unknown';
+    const winner = change.winnerPolityId ? state.politiesById.get(change.winnerPolityId) ?? change.winnerPolityId : '???';
+    const loser = change.loserPolityId ? state.politiesById.get(change.loserPolityId) ?? change.loserPolityId : '???';
+    const typeLabel = change.type.replace(/_/g, ' ').toLowerCase();
     const item = document.createElement('div');
-    item.className = 'item';
-    item.innerHTML = `<strong>${winner}</strong> → ${loser}<div class="muted">${change.type}</div>`;
+    item.className = 'item change-item';
+    item.innerHTML = `\uD83D\uDDFA\uFE0F <strong>${winner}</strong> \u2190 ${loser}<div class="muted">${typeLabel}${change.reason ? ' \u2014 ' + change.reason : ''}</div>`;
     item.addEventListener('click', () => selectChange(change.id));
     elements.absorptionLedger.appendChild(item);
   });
@@ -405,10 +510,21 @@ const renderAbsorptionLedger = (changes) => {
 
 const renderTopPowers = (polities) => {
   elements.topPowers.innerHTML = '';
+  const maxPower = polities.length > 0 ? polities[0].stats.powerScore : 1;
   polities.forEach((polity, index) => {
+    const pct = Math.round((polity.stats.powerScore / maxPower) * 100);
+    const [r, g, b] = colorFromId(polity.id, 0.6, 0.5);
     const item = document.createElement('div');
-    item.className = 'item';
-    item.innerHTML = `<strong>#${index + 1} ${polity.name}</strong> · Power ${formatNumber(polity.stats.powerScore)}`;
+    item.className = 'item power-item';
+    item.innerHTML = `
+      <div class="power-row">
+        <span class="power-rank">#${index + 1}</span>
+        <strong>${polity.name}</strong>
+        <span class="muted">${formatNumber(polity.stats.powerScore)}</span>
+      </div>
+      <div class="power-bar-bg"><div class="power-bar" style="width:${pct}%;background:rgb(${r},${g},${b})"></div></div>
+      <div class="power-stats muted">Pop ${formatNumber(polity.stats.population)} · GDP ${formatNumber(polity.stats.gdp)} · Mil ${formatNumber(polity.stats.military)}</div>
+    `;
     item.addEventListener('click', () => selectPolity(polity.id));
     elements.topPowers.appendChild(item);
   });
@@ -583,7 +699,15 @@ const renderMap = async () => {
     const owners = decodePoliticalOwners(data, mapWidth * mapHeight);
     state.ownerCache.set(state.year, owners);
     owners.forEach((owner, idx) => {
-      const [r, g, b] = owner ? colorFromId(owner) : [30, 30, 30];
+      const cell = state.cells?.[idx];
+      let r, g, b;
+      if (owner) {
+        [r, g, b] = colorFromId(owner, 0.65, 0.5);
+      } else if (cell?.isOcean) {
+        [r, g, b] = oceanColor;
+      } else {
+        [r, g, b] = landEmptyColor;
+      }
       const offset = idx * 4;
       image.data[offset] = r;
       image.data[offset + 1] = g;
@@ -595,18 +719,25 @@ const renderMap = async () => {
     const min = Math.min(...values);
     const max = Math.max(...values);
     values.forEach((value, idx) => {
+      const cell = state.cells?.[idx];
       const normalized = (value - min) / (max - min || 1);
-      const shade = Math.floor(30 + normalized * 225);
+      const [r, g, b] = elevationColor(normalized, cell?.isOcean);
       const offset = idx * 4;
-      image.data[offset] = shade;
-      image.data[offset + 1] = shade;
-      image.data[offset + 2] = shade;
+      image.data[offset] = r;
+      image.data[offset + 1] = g;
+      image.data[offset + 2] = b;
       image.data[offset + 3] = 255;
     });
   } else if (state.layer === 'resources') {
     data.forEach((tags, idx) => {
-      const tag = tags && tags.length ? tags[0] : 'none';
-      const [r, g, b] = colorFromId(tag, 0.45, 0.5);
+      const cell = state.cells?.[idx];
+      let r, g, b;
+      if (cell?.isOcean) {
+        [r, g, b] = oceanColor;
+      } else {
+        const tag = tags && tags.length ? tags[0] : 'none';
+        [r, g, b] = colorFromId(tag, 0.55, 0.5);
+      }
       const offset = idx * 4;
       image.data[offset] = r;
       image.data[offset + 1] = g;
@@ -615,7 +746,7 @@ const renderMap = async () => {
     });
   } else {
     data.forEach((biome, idx) => {
-      const [r, g, b] = colorFromId(String(biome), 0.45, 0.5);
+      const [r, g, b] = biomeColors[biome] ?? biomeColors.ocean;
       const offset = idx * 4;
       image.data[offset] = r;
       image.data[offset + 1] = g;
@@ -695,6 +826,7 @@ const setYear = (year) => {
   elements.yearValue.textContent = clamped;
   elements.yearTitle.textContent = `Year ${clamped}`;
   updateHash('replace');
+  renderHeatmap();
 };
 
 const syncFromHash = async () => {
@@ -934,6 +1066,8 @@ elements.searchInput.addEventListener('keydown', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  const active = document.activeElement?.tagName;
+  if (active === 'INPUT' || active === 'TEXTAREA' || active === 'SELECT') return;
   if (event.key === '/') {
     event.preventDefault();
     elements.searchInput.focus();
@@ -942,12 +1076,15 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     elements.searchInput.blur();
     elements.searchResults.hidden = true;
+    stopPlay();
   }
   if (event.key === 'ArrowLeft') {
+    stopPlay();
     setYear(state.year - 1);
     loadYearData().then(renderMap);
   }
   if (event.key === 'ArrowRight') {
+    stopPlay();
     setYear(state.year + 1);
     loadYearData().then(renderMap);
   }
@@ -961,6 +1098,41 @@ elements.canvas.addEventListener('mousemove', updateTooltip);
 elements.canvas.addEventListener('mouseleave', () => (elements.tooltip.hidden = true));
 elements.canvas.addEventListener('click', handleMapClick);
 
+const stopPlay = () => {
+  state.playing = false;
+  if (state.playTimer) { clearInterval(state.playTimer); state.playTimer = null; }
+  elements.playToggle.textContent = '\u25B6';
+  elements.playToggle.classList.remove('playing');
+};
+
+const startPlay = () => {
+  if (!state.worldMeta) return;
+  state.playing = true;
+  elements.playToggle.innerHTML = '\u23F8';
+  elements.playToggle.classList.add('playing');
+  const tick = () => {
+    if (!state.worldMeta || state.year >= state.worldMeta.endYear) { stopPlay(); return; }
+    setYear(state.year + 1);
+    loadYearData().then(renderMap);
+  };
+  state.playTimer = setInterval(tick, Math.max(50, 1000 / state.playSpeed));
+};
+
+const togglePlay = () => { state.playing ? stopPlay() : startPlay(); };
+
+elements.playToggle.addEventListener('click', togglePlay);
+elements.playSpeed.addEventListener('change', (event) => {
+  state.playSpeed = Number(event.target.value);
+  if (state.playing) { stopPlay(); startPlay(); }
+});
+
 window.addEventListener('hashchange', syncFromHash);
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === ' ' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+    event.preventDefault();
+    togglePlay();
+  }
+});
 
 loadWorlds().then(syncFromHash);
