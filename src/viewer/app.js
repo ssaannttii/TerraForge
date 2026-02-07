@@ -703,6 +703,8 @@ const syncFromHash = async () => {
   if (hash.world && hash.world !== state.worldId) {
     state.worldId = hash.world;
     await loadWorld();
+  } else if (state.worldId && !state.worldMeta) {
+    await loadWorld();
   }
   if (!state.worldId) return;
   if (hash.year !== null && hash.year !== state.year) {
@@ -834,8 +836,9 @@ const handleGenerate = async () => {
 
 elements.generateConfig.value = defaultConfig;
 elements.refreshWorlds.addEventListener('click', loadWorlds);
-elements.worldSelect.addEventListener('change', (event) => {
+elements.worldSelect.addEventListener('change', async (event) => {
   state.worldId = event.target.value;
+  state.worldMeta = null;
   updateHash();
 });
 elements.openGenerate.addEventListener('click', () => elements.generateModal.showModal());
