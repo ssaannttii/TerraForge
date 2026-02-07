@@ -5,6 +5,7 @@ export type SearchResult = {
   id: string;
   year: number | null;
   title: string;
+  snippet?: string;
 };
 
 type SearchEntry = SearchResult & { tokens: string[]; haystack: string };
@@ -18,6 +19,7 @@ export type WorldIndexes = {
   eventsByYear: Map<number, string[]>;
   eventsByPolity: Map<string, string[]>;
   changesByPolity: Map<string, string[]>;
+  changesByYear: Map<number, string[]>;
   eventsById: Map<string, TimelineEvent>;
   changesById: Map<string, TerritorialChange>;
   warsById: Map<string, War>;
@@ -71,6 +73,7 @@ export function buildWorldIndexes(world: WorldBundle): WorldIndexes {
   const eventsByYear = new Map<number, string[]>();
   const eventsByPolity = new Map<string, string[]>();
   const changesByPolity = new Map<string, string[]>();
+  const changesByYear = new Map<number, string[]>();
   const eventsById = new Map(world.events.map((event) => [event.id, event]));
   const changesById = new Map(world.territorialChanges.map((change) => [change.id, change]));
   const warsById = new Map(world.wars.map((war) => [war.id, war]));
@@ -90,6 +93,7 @@ export function buildWorldIndexes(world: WorldBundle): WorldIndexes {
       id: event.id,
       year: event.year,
       title: event.title,
+      snippet: event.explanation[0],
       tokens,
       haystack: haystack.toLowerCase()
     });
@@ -103,6 +107,7 @@ export function buildWorldIndexes(world: WorldBundle): WorldIndexes {
       id: polity.id,
       year: null,
       title: polity.name,
+      snippet: polity.name,
       tokens,
       haystack: haystack.toLowerCase()
     });
@@ -116,6 +121,7 @@ export function buildWorldIndexes(world: WorldBundle): WorldIndexes {
       id: war.id,
       year: war.startYear,
       title: war.name,
+      snippet: war.explanation[0],
       tokens,
       haystack: haystack.toLowerCase()
     });
@@ -130,10 +136,12 @@ export function buildWorldIndexes(world: WorldBundle): WorldIndexes {
       id: change.id,
       year: change.year,
       title,
+      snippet: change.reason,
       tokens,
       haystack: haystack.toLowerCase()
     });
 
+    ensureMapEntry(changesByYear, change.year).push(change.id);
     if (change.winnerPolityId) {
       ensureMapEntry(changesByPolity, change.winnerPolityId).push(change.id);
     }
@@ -182,6 +190,7 @@ export function buildWorldIndexes(world: WorldBundle): WorldIndexes {
     eventsByYear,
     eventsByPolity,
     changesByPolity,
+    changesByYear,
     eventsById,
     changesById,
     warsById,
@@ -214,10 +223,11 @@ export function searchWorldIndexes(indexes: WorldIndexes, query: string, limit =
       const yearB = b.year ?? Number.POSITIVE_INFINITY;
       if (yearA !== yearB) return yearA - yearB;
       if (a.kind !== b.kind) return a.kind.localeCompare(b.kind);
-      return a.title.localeCompare(b.title);
+      if (a.title !== b.title) return a.title.localeCompare(b.title);
+      return a.id.localeCompare(b.id);
     })
     .slice(0, limit)
-    .map((entry) => ({ kind: entry.kind, id: entry.id, year: entry.year, title: entry.title }));
+    .map((entry) => ({ kind: entry.kind, id: entry.id, year: entry.year, title: entry.title, snippet: entry.snippet }));
   return results;
 }
 
@@ -227,6 +237,7 @@ export function serializeWorldIndexes(indexes: WorldIndexes) {
     eventsByYear: mapToObject(indexes.eventsByYear),
     eventsByPolity: mapToObject(indexes.eventsByPolity),
     changesByPolity: mapToObject(indexes.changesByPolity),
+    changesByYear: mapToObject(indexes.changesByYear),
     searchEntries: indexes.searchEntries.map(({ kind, id, year, title }) => ({ kind, id, year, title })),
     polityStatsSeries: mapToObject(indexes.polityStatsSeries)
   };

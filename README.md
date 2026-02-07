@@ -53,15 +53,19 @@ node dist/cli/index.js export --world out/world.json --format geojson --year 500
 - `GET /worlds`
 - `POST /generate` → `{ worldId, bundle }`
 - `GET /world/:worldId/meta`
+- `GET /world/:worldId/planet`
 - `GET /world/:worldId/map?layer=political|biome|elevation|resources&year=YYYY`
 - `GET /world/:worldId/polities?year=YYYY&sort=powerScore&limit=...`
 - `GET /world/:worldId/polity/:id?year=YYYY`
 - `GET /world/:worldId/timeline?from=Y1&to=Y2&type=...`
 - `GET /world/:worldId/war/:id`
-- `GET /world/:worldId/changes?year=YYYY`
-- `GET /world/:worldId/changes?from=Y1&to=Y2&type=...`
-- `GET /world/:worldId/years/summary?from=Y1&to=Y2`
-- `GET /world/:worldId/events/search?q=...&limit=...`
+- `GET /world/:worldId/wars`
+- `GET /world/:worldId/cells`
+- `GET /world/:worldId/changes?year=YYYY&type=...&polity=...`
+- `GET /world/:worldId/changes?from=Y1&to=Y2&type=...&polity=...`
+- `GET /world/:worldId/years/summary?from=Y1&to=Y2` → `{ from, to, years: [...] }`
+- `GET /world/:worldId/search?q=...&limit=...`
+- `GET /world/:worldId/events/search?q=...&limit=...` (legacy)
 - `GET /world/:worldId/polity/:id/history?from=Y1&to=Y2`
 - `GET /world/:worldId/export?format=...`
 - `GET /viewer` (HTML)
@@ -70,13 +74,31 @@ node dist/cli/index.js export --world out/world.json --format geojson --year 500
 - Invalid numeric query params (year/from/to/limit) return `400 { error: "invalid <param>" }`.
 - Invalid `/generate` config returns `400 { error: "invalid config", details: [...] }`.
 
-## Viewer
+## Encyclopedia Viewer
+```bash
+pnpm install && pnpm build
+node dist/cli/index.js view --config examples/small.json
+```
+The CLI starts the server, opens a browser window, and prints the viewer URL (copy it if the browser does not open). The viewer is served from `src/viewer` and expects to run from the repo root so it can read those files at runtime.
+
+### Deep links
+All viewer state is encoded in the URL hash for sharing:
+- `/viewer#world=<id>&year=500`
+- `/viewer#world=<id>&year=500&polity=polity-3`
+- `/viewer#world=<id>&year=500&war=war-12`
+- `/viewer#world=<id>&year=500&event=event-9`
+- `/viewer#world=<id>&year=500&change=chg-88&layer=political`
+
+### Keyboard shortcuts
+- <kbd>/</kbd> focus global search
+- <kbd>Esc</kbd> close search
+- <kbd>←</kbd>/<kbd>→</kbd> step year -1/+1
+
+### Viewer highlights
 - Timeline-first layout: jump to years, heatmap navigation, and grouped events.
 - Instant search across polities, wars, events, and changes.
-- Story cards show causes, actors, and effects with links to wars and treaties.
-- Absorption ledger and top powers over time views for quick context.
-
-The viewer is served from `src/viewer` and expects to run from the repo root so it can read those files at runtime.
+- Inspector pages for events, polities, wars, and changes.
+- Absorption ledger and top powers at year Y for quick context.
 
 ## Output Formats
 - **JSON**: `WorldBundle` (deterministically ordered fields).
